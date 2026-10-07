@@ -22,7 +22,6 @@ if(windows){
   const installerPath=path.join(bundle,'nsis',installer);
   // NSIS requires /D to be the final argument and has its own quoting rules.
   const command=`$p=Start-Process -FilePath $env:MEDIA_INSTALLER -ArgumentList @('/S',('/D='+$env:MEDIA_INSTALL_DEST)) -Wait -PassThru; exit $p.ExitCode`;
-  run('powershell.exe',['-NoProfile','-NonInteractive','-Command',command],{...process.env,MEDIA_INSTALLER:installerPath,MEDIA_INSTALL_DEST:destination});
   evidence.installer={filename:installer,sha256:await hash(installerPath)};
   const template=await readFile(path.resolve('target',...(target?[target]:[]),'release/nsis/x64/installer.nsi'),'utf8');
   const runtime=template.match(/!define WEBVIEW2INSTALLERPATH "([^"\r\n]+)"/)?.[1]?.replaceAll('$$','$');
@@ -38,6 +37,7 @@ if(windows){
   console.log('Embedded WebView2 provenance:',JSON.stringify(evidence.webview2));
   if(evidence.webview2.signatureStatus==='HashMismatch'||(evidence.webview2.signatureStatus==='Valid'&&!evidence.webview2.qualifiedSignature))throw Error('Offline WebView2 installer integrity/publisher mismatch');
   if(!evidence.webview2.qualifiedSignature)console.log('WebView2 signature qualification remains a stable-publication gate; continuing development runtime checks.');
+  run('powershell.exe',['-NoProfile','-NonInteractive','-Command',command],{...process.env,MEDIA_INSTALLER:installerPath,MEDIA_INSTALL_DEST:destination});
   application=await find(destination,'media-compression.exe')||await find(destination,'Media Compression.exe');
   const ffmpeg=await find(destination,'ffmpeg.exe');codecs=ffmpeg&&path.dirname(ffmpeg);
   worker=await find(destination,'media-worker.exe');
