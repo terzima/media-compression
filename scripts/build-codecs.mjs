@@ -77,16 +77,19 @@ if(!existsSync(path.join(buildDir,'pngquant-3.0.3/target/release/pngquant'+ext))
  run('cargo',['build','--release','--locked','--features','static,z-static',...patchArgs,'--manifest-path',path.join(buildDir,'pngquant-3.0.3/Cargo.toml')]);
  if(rustEnvCC)env.CC=rustEnvCC;if(rustEnvCXX)env.CXX=rustEnvCXX;
 }
-if(!existsSync(path.join(prefix,'bin/ffmpeg'+ext))){
+const ffmpegFlags=[`--prefix=${prefix}`,`--pkg-config=${path.join(buildDir,'pkg-config')}`,...(windows?['--target-os=mingw32','--arch=x86_64','--cc=gcc','--cxx=g++','--disable-response-files']:[]),'--disable-gpl','--disable-nonfree','--disable-network','--disable-shared','--enable-static','--disable-doc','--disable-debug','--disable-autodetect','--disable-avdevice','--disable-sdl2','--disable-x86asm','--disable-everything','--enable-libopus','--enable-libmp3lame','--enable-zlib','--enable-decoder=aac,mp3,flac,opus,vorbis,pcm_*,png,mjpeg,webp,ppm','--enable-encoder=aac,libmp3lame,libopus,flac,pcm_f32le,wrapped_avframe,vorbis','--enable-parser=aac,mpegaudio,flac,opus,vorbis,mjpeg,png,webp','--enable-demuxer=aac,mp3,flac,ogg,mov,wav,image2,image_jpeg_pipe,image_png_pipe,image_webp_pipe,image_ppm_pipe','--enable-muxer=mp3,ogg,flac,pcm_f32le,null,mp4,mov,ipod,adts,wav','--enable-filter=ssim,scale,format,aresample,aformat,anull,null','--enable-bsf=aac_adtstoasc','--enable-protocol=file,pipe',`--extra-cflags=-I${prefix}/include`,`--extra-ldflags=-L${prefix}/lib${windows?' -static -static-libgcc':''}`];
+const ffmpegConfig=path.join(prefix,'ffmpeg-config.json');
+if(!existsSync(path.join(prefix,'bin/ffmpeg'+ext)) || !existsSync(ffmpegConfig) || await readFile(ffmpegConfig,'utf8')!==JSON.stringify(ffmpegFlags)){
  const src=path.join(buildDir,'ffmpeg-8.1.3');
  const pkg=path.join(buildDir,'pkg-config');
  await writeFile(pkg,`#!/bin/sh\nexec node '${path.join(root,'scripts/pkg-config.mjs').replaceAll("'","'\\''")}' "$@"\n`);await chmod(pkg,0o755);
- run('sh',['configure',`--prefix=${prefix}`,`--pkg-config=${pkg}`,...(windows?['--target-os=mingw32','--arch=x86_64','--cc=gcc','--cxx=g++']:[]),'--disable-gpl','--disable-nonfree','--disable-network','--disable-shared','--enable-static','--disable-doc','--disable-debug','--disable-autodetect','--disable-avdevice','--disable-sdl2','--disable-x86asm','--enable-libopus','--enable-libmp3lame',`--extra-cflags=-I${prefix}/include`,`--extra-ldflags=-L${prefix}/lib${windows?' -static -static-libgcc':''}`],src);
+ run('sh',['configure',...ffmpegFlags],src);
  run('make',['-j4'],src);run('make',['install'],src);
+ await writeFile(ffmpegConfig,JSON.stringify(ffmpegFlags));
 }
 for(const name of ['ffmpeg','ffprobe','cwebp','cjpeg'])await cp(path.join(prefix,'bin',name+ext),path.join(dest,name+ext));
 await cp(path.join(buildDir,'pngquant-3.0.3/target/release/pngquant'+ext),path.join(dest,'pngquant'+ext));
-const versions={platform:process.platform,arch:process.arch,sources,helpers:{},build:{node:process.version,recipeSha256:createHash('sha256').update(await readFile(path.join(root,'scripts/build-codecs.mjs'))).digest('hex'),compiler:spawnSync(env.CC||'cc',['--version'],{encoding:'utf8',env}).stdout?.split('\n')[0],cflags:env.CFLAGS,ldflags:env.LDFLAGS,ffmpegFlags:'--disable-gpl --disable-nonfree --disable-network --disable-autodetect --enable-libopus --enable-libmp3lame'}};
+const versions={platform:process.platform,arch:process.arch,sources,helpers:{},build:{node:process.version,recipeSha256:createHash('sha256').update(await readFile(path.join(root,'scripts/build-codecs.mjs'))).digest('hex'),compiler:spawnSync(env.CC||'cc',['--version'],{encoding:'utf8',env}).stdout?.split('\n')[0],cflags:env.CFLAGS,ldflags:env.LDFLAGS,ffmpegFlags}};
 for(const name of ['ffmpeg','ffprobe','pngquant','cwebp','cjpeg']){
  const binary=path.join(dest,name+ext);await chmod(binary,0o755);
  const args=name==='ffmpeg'||name==='ffprobe'?['-version']:name==='pngquant'?['--version']:['-version'];

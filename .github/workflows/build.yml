@@ -65,7 +65,8 @@ jobs:
             .tools/sources
             .tools/patched-sys
             src-tauri/resources/codecs
-          key: codecs-${{ matrix.target }}-${{ hashFiles('scripts/build-codecs.mjs', 'scripts/codec-sources.json', 'scripts/pkg-config.mjs', 'scripts/pngquant.Cargo.lock', 'rust-toolchain.toml') }}
+          key: codecs-${{ matrix.target }}-${{ hashFiles('scripts/build-codecs.mjs', 'scripts/codec-sources.json', 'scripts/pkg-config.mjs', 'scripts/pngquant.Cargo.lock', 'rust-toolchain.toml') }}-${{ hashFiles('.cargo/config.toml') }}
+          restore-keys: codecs-${{ matrix.target }}-${{ hashFiles('scripts/build-codecs.mjs', 'scripts/codec-sources.json', 'scripts/pkg-config.mjs', 'scripts/pngquant.Cargo.lock', 'rust-toolchain.toml') }}
       - name: Rebuild Windows Rust helper with static CRT
         if: runner.os == 'Windows'
         shell: pwsh
