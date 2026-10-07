@@ -333,7 +333,10 @@ fn cli_saved_folder_export_reopens_only_selected_sources() {
         .as_array()
         .unwrap()
         .iter()
-        .find(|m| m["relativeName"].as_str().unwrap().contains("日本 🐈"))
+        .find(|m| {
+            Path::new(m["relativeName"].as_str().unwrap())
+                .starts_with(Path::new("photos").join("日本 🐈"))
+        })
         .unwrap();
     let candidate = &media["candidates"][0];
     let id = candidate["id"].as_str().unwrap();
