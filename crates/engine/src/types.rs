@@ -21,6 +21,7 @@ pub struct Properties {
     pub height: Option<u32>,
     pub alpha: bool,
     pub bit_depth: Option<u8>,
+    pub color_profile: Option<String>,
     pub sample_rate: Option<u32>,
     pub channels: Option<u16>,
     pub duration: Option<f64>,

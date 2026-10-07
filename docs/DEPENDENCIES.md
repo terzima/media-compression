@@ -1,0 +1,15 @@
+# Dependency and distribution record
+
+The application is MIT; that does not change any dependency's license. Exact registry resolutions are in Cargo.lock, package-lock.json, and scripts/pngquant.Cargo.lock. Native source URLs, versions, archive sizes, SHA-256 checksums, and licenses are in scripts/codec-sources.json. Never accept a checksum mismatch by updating a hash without reviewing the upstream change.
+
+Native executables: FFmpeg/ffprobe 8.1.3 (LGPL-compatible build, GPL/nonfree/network/autodetection disabled), Opus 1.6.1, LAME 4.0 (encoder only), libwebp 1.6.0, libjpeg-turbo 3.2.0, and separately executed pngquant 3.0.3 with its exact libimagequant submodule. pngquant and libimagequant retain GPL-3.0-or-later licensing. oxipng 10.2.1 is linked in the image worker. Little CMS 2.19.1 renders RGB/gray ICC profiles. Its compiled C files and headers are byte-identical to the lcms2-sys 4.0.7 vendored code; packaging also carries the exact upstream 2.19.1 archive. pngquant bindings are rebuilt with this upstream source.
+
+The first native audit also pins libpng 1.6.59 and zlib 1.3.2. The pngquant libpng-sys 1.1.11 binding's older bundled C source is replaced reproducibly with 1.6.59 before building. libz-sys's locked source bundles zlib 1.3.2. cwebp uses the private source-built static libpng/zlib prefix, rather than Homebrew libraries. Patched bindings are generated under .tools/patched-sys and included in matching-source artifacts; registry source is never modified in place.
+
+Build stack: Node 24.21.0, Rust 1.99.0, CMake 4.4.4 and Ninja 1.13.2; Tauri 2.12.1, React 19.3.0, TypeScript 7.0.2, Vite 8.3.3, Rodio 0.22.2. Rodio uses playback only, without its extra media decoders. CI records runner OS, compiler, and tool output. Windows uses MinGW for standalone C helpers and MSVC for Rust-linked C bindings/application code. The lockfiles freeze registry dependencies; runner images and their platform SDKs remain external build inputs whose observed versions must be recorded with release evidence.
+
+`npm run sources` creates matching native source archives, Rust vendor directories for both workspaces, patched bindings, build scripts/locks, notices and a versioned dependency manifest under artifacts/. Required license files are copied into the application resources before packaging. The dependency-source tarball gets its own checksum. Release artifacts must include this material, the project's source at the exact release commit, and installer checksums together.
+
+FFmpeg's source and scripts allow rebuilding/relinking its LGPL components. pngquant's complete corresponding source and locked build material ship alongside each release. Review the resulting archive against each dependency's notices and source obligations before distribution. Codec patent obligations depend on distribution jurisdictions; resolve that release gate before stable publication. No claim that the project MIT license grants codec patent rights is made.
+
+A build or successful helper launch does not prove installation or offline playback. See RELEASE_QUALIFICATION.md for evidence requirements.

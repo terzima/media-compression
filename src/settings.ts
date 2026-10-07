@@ -6,7 +6,7 @@ export function config(form:Form,media:Media,index=form.preset):Settings {
  const lossless=image?(form.imageMode==='auto'?format==='png':form.imageMode==='lossless'):format==='flac';
  const mono=p.channels===1;
  return {format,lossless,quality:image?(advanced?form.quality:[90,80,65][index]):null,
-  bitrate:!image&&format!=='flac'?(advanced?form.bitrate:(format==='opus'?(mono?[64,48,32]:[160,96,64]):(mono?[96,64,48]:[192,128,96]))[index]):null,
+  bitrate:!image&&format!=='flac'&&!(format==='mp3'&&(!advanced||form.useVbr))?(advanced?form.bitrate:(format==='opus'?(mono?[64,48,32]:[160,96,64]):(mono?[96,64,48]:[192,128,96]))[index]):null,
   vbrQuality:!image&&format==='mp3'&&(!advanced||form.useVbr)?(advanced?form.vbrQuality:[2,4,6][index]):null,
   effort:format==='flac'?(advanced?form.effort:5):advanced?form.effort:format==='png'&&!lossless?3:2,
   background:image&&form.flatten?form.background:null};

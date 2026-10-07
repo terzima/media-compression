@@ -86,9 +86,12 @@ async fn export_candidates(
     .map_err(|e| e.to_string())?
 }
 #[tauri::command]
-fn clear_cache(state: State<AppState>) -> Result<(), String> {
+fn clear_cache(state: State<AppState>) -> Result<bool, String> {
     state.playback.control("stop", None, None)?;
-    engine(&state)?.clear().map_err(|e| format!("{e:#}"))
+    engine(&state)?
+        .clear()
+        .map(|_| true)
+        .map_err(|e| format!("{e:#}"))
 }
 #[tauri::command]
 fn playback_info(state: State<AppState>) -> playback::Info {
@@ -105,7 +108,7 @@ fn playback_control(
 }
 #[tauri::command]
 async fn play_media(state: State<'_, AppState>, id: String, position: f64) -> Result<(), String> {
-    if !position.is_finite() || position < 0. {
+    if position.is_some_and(|v| !v.is_finite() || v < 0.) {
         return Err("Playback position is invalid".into());
     }
     let engine = engine(&state)?;
@@ -115,7 +118,13 @@ async fn play_media(state: State<'_, AppState>, id: String, position: f64) -> Re
     })
     .await
     .map_err(|e| e.to_string())??;
-    state.playback.play(id, path, rate, channels, position);
+    state.playback.play(
+        id,
+        path,
+        rate,
+        channels,
+        position.unwrap_or_else(|| state.playback.info().position),
+    );
     Ok(())
 }
 fn main() {

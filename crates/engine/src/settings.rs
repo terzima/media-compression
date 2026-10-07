@@ -6,6 +6,12 @@ pub fn validate(s: &Settings, p: &Properties) -> Result<()> {
         if !["png", "jpeg", "webp"].contains(&s.format.as_str()) {
             bail!("Choose PNG, JPEG or WebP");
         }
+        if s.lossless
+            && p.color_profile.as_deref() == Some("gray")
+            && !(s.format == "png" && p.format == "png")
+        {
+            bail!("Lossless conversion of gray ICC profiles is unsupported; use lossless PNG optimization or a lossy RGB conversion");
+        }
         if s.lossless && s.format == "jpeg" {
             bail!("JPEG lossless encoding is not available");
         }

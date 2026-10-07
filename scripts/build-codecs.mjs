@@ -47,6 +47,7 @@ if(!existsSync(path.join(prefix,'lib/libmp3lame.a'))){
  run('make',['-j4'],src);run('make',['install'],src);
 }
 if(!existsSync(path.join(prefix,'lib/libz.a')))cmake('zlib-1.3.2',['-DZLIB_BUILD_SHARED=OFF','-DZLIB_BUILD_TESTING=OFF']);
+if(windows && existsSync(path.join(prefix,'lib/libzs.a')))await cp(path.join(prefix,'lib/libzs.a'),path.join(prefix,'lib/libz.a'));
 if(!existsSync(path.join(prefix,'lib/libpng16.a')))cmake('libpng-1.6.59',['-DPNG_SHARED=OFF','-DPNG_TESTS=OFF',`-DZLIB_LIBRARY=${prefix}/lib/libz.a`,`-DZLIB_INCLUDE_DIR=${prefix}/include`]);
 if(!existsSync(path.join(prefix,'bin/cwebp'+ext)))cmake('libwebp-1.6.0',['-DBUILD_SHARED_LIBS=OFF','-DWEBP_BUILD_CWEBP=ON','-DWEBP_BUILD_DWEBP=OFF','-DWEBP_BUILD_EXTRAS=OFF','-DWEBP_BUILD_ANIM_UTILS=OFF','-DWEBP_BUILD_VWEBP=OFF','-DWEBP_BUILD_WEBPMUX=OFF','-DWEBP_BUILD_GIF2WEBP=OFF',`-DPNG_LIBRARY=${prefix}/lib/libpng16.a`,`-DPNG_PNG_INCLUDE_DIR=${prefix}/include`,`-DZLIB_LIBRARY=${prefix}/lib/libz.a`,`-DZLIB_INCLUDE_DIR=${prefix}/include`,'-DWEBP_ENABLE_SIMD=ON']);
 if(!existsSync(path.join(prefix,'bin/cjpeg'+ext)))cmake('libjpeg-turbo-3.2.0',['-DENABLE_SHARED=OFF','-DENABLE_STATIC=ON','-DWITH_TURBOJPEG=OFF','-DWITH_SIMD=OFF']);

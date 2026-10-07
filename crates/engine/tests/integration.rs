@@ -301,3 +301,97 @@ fn thousand_file_batch_and_queued_cancellation() {
     wait(&engine);
     assert!(start.elapsed() < Duration::from_secs(5));
 }
+
+#[test]
+#[ignore = "requires bundled helpers"]
+fn color_metadata_precision_orientation_and_small_images() {
+    let dir = tempfile::tempdir().unwrap();
+    let colored = dir.path().join("gamma.png");
+    let mut encoder = png::Encoder::new(std::fs::File::create(&colored).unwrap(), 16, 16);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_source_gamma(png::ScaledFloat::new(1.));
+    let mut writer = encoder.write_header().unwrap();
+    writer
+        .write_image_data(&[64, 120, 180, 180].repeat(256))
+        .unwrap();
+    drop(writer);
+    let sixteen = dir.path().join("precision.png");
+    let img = image::ImageBuffer::from_fn(16, 16, |x, y| {
+        image::Rgba([(x * 997) as u16, (y * 1133) as u16, 2037u16, 50001u16])
+    });
+    image::DynamicImage::ImageRgba16(img)
+        .save(&sixteen)
+        .unwrap();
+    let tiny = dir.path().join("tiny.png");
+    image::RgbaImage::from_pixel(1, 1, image::Rgba([63, 111, 174, 200]))
+        .save(&tiny)
+        .unwrap();
+    let oriented = dir.path().join("orientation.jpg");
+    image::RgbImage::from_fn(12, 8, |x, y| image::Rgb([x as u8 * 20, y as u8 * 30, 100]))
+        .save(&oriented)
+        .unwrap();
+    let jpeg = std::fs::read(&oriented).unwrap();
+    let exif = b"Exif\0\0II*\0\x08\0\0\0\x01\0\x12\x01\x03\0\x01\0\0\0\x06\0\0\0\0\0\0\0";
+    let mut tagged = jpeg[..2].to_vec();
+    tagged.extend([0xff, 0xe1]);
+    tagged.extend(((exif.len() + 2) as u16).to_be_bytes());
+    tagged.extend(exif);
+    tagged.extend(&jpeg[2..]);
+    std::fs::write(&oriented, tagged).unwrap();
+    let engine = engine(&dir.path().join("workspace"));
+    engine
+        .import(vec![
+            colored.clone(),
+            sixteen.clone(),
+            tiny.clone(),
+            oriented.clone(),
+        ])
+        .unwrap();
+    let data = engine.snapshot();
+    assert!(
+        data.media.iter().all(|m| m.error.is_none()),
+        "{:?}",
+        data.media
+    );
+    let mut tasks = vec![];
+    for (i, m) in data.media.iter().enumerate() {
+        let options = match i {
+            0 => vec![
+                image("webp", true, 100.),
+                image("webp", false, 80.),
+                image("png", true, 100.),
+            ],
+            1 => vec![image("png", true, 100.)],
+            2 => vec![image("webp", false, 0.)],
+            _ => vec![image("png", true, 100.)],
+        };
+        tasks.push((m.id.clone(), options));
+    }
+    engine.start(tasks).unwrap();
+    wait(&engine);
+    let out = engine.snapshot();
+    assert!(
+        out.jobs.iter().all(|j| j.errors.is_empty()),
+        "{:?}",
+        out.jobs
+    );
+    let gamma = &out.media[0].candidates;
+    assert_eq!(gamma[0].diagnostics.pixel_identical, Some(true));
+    let preview = image::open(engine.preview(&gamma[0].id).unwrap())
+        .unwrap()
+        .to_rgba8();
+    assert!(
+        preview.get_pixel(0, 0)[0] > 100,
+        "Gamma must be converted for an sRGB preview: {:?}; {:?}; {:?}",
+        preview.get_pixel(0, 0),
+        out.media[0].properties,
+        gamma[0].properties
+    );
+    assert_eq!(out.media[1].candidates[0].properties.bit_depth, Some(16));
+    assert!(out.media[2].candidates[0].diagnostics.ssim_light.is_none());
+    assert_eq!(out.media[3].properties.as_ref().unwrap().width, Some(8));
+    assert_eq!(out.media[3].candidates[0].properties.height, Some(12));
+    for m in &data.media {
+        assert_eq!(hash_file(&m.path).unwrap(), m.sha256);
+    }
+}

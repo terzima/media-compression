@@ -127,6 +127,8 @@ impl Playback {
                         *loops.lock().unwrap() = value;
                     }
                     Command::Stop => {
+                        position.store(0, Ordering::Relaxed);
+                        *loops.lock().unwrap() = None;
                         if let Some(p) = player.take() {
                             p.stop();
                         }
@@ -159,6 +161,9 @@ impl Playback {
         value: Option<f64>,
         end: Option<f64>,
     ) -> Result<(), String> {
+        if value.is_some_and(|v| !v.is_finite()) || end.is_some_and(|v| !v.is_finite()) {
+            return Err("Playback values must be finite".into());
+        }
         let command = match action {
             "pause" => Command::Pause(true),
             "resume" => Command::Pause(false),

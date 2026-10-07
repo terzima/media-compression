@@ -11,7 +11,7 @@ function Mark(){return <svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><
 export default function App(){
  const [data,setData]=useState<Snapshot>(empty),[tab,setTab]=useState<'image'|'audio'>('image'),[form,setForm]=useState<Form>(loadForm),[active,setActive]=useState<string|null>(null),[variant,setVariant]=useState<string|null>(null),[selected,setSelected]=useState<Set<string>>(new Set()),[inputs,setInputs]=useState<Set<string>>(new Set()),[message,setMessage]=useState(''),[error,setError]=useState(''),[importing,setImporting]=useState(false),[exporting,setExporting]=useState(false),[report,setReport]=useState(true),[drag,setDrag]=useState(false),[scroll,setScroll]=useState(0),[split,setSplit]=useState(50),[background,setBackground]=useState('checker'),[zoom,setZoom]=useState(0),[play,setPlay]=useState<Playback>({id:null,position:0,duration:0,paused:true,volume:1,error:null}),[loop,setLoop]=useState(false);
  const [sourcePreview,setSourcePreview]=useState<string|null>(null),[candidatePreview,setCandidatePreview]=useState<string|null>(null);
- const seen=useRef(new Set<string>()),seenCandidates=useRef(new Set<string>()),list=useRef<HTMLDivElement>(null);
+ const seen=useRef(new Set<string>()),seenCandidates=useRef(new Set<string>()),manualOutputs=useRef(new Set<string>()),list=useRef<HTMLDivElement>(null);
  const refresh=async()=>{try{setData(await invoke<Snapshot>('snapshot'));}catch(e){setError(String(e));}};
  const command=async<T,>(name:string,args?:Record<string,unknown>):Promise<T|undefined>=>{try{setError('');return await invoke<T>(name,args);}catch(e){setError(String(e));return undefined;}};
  useEffect(()=>{localStorage.setItem('media-compression-settings-v1',JSON.stringify(form));},[form]);
@@ -27,7 +27,7 @@ export default function App(){
   if(newFiles.length)setInputs(old=>new Set([...old,...newFiles.filter(m=>!m.error).map(m=>m.id)]));
   if(!active&&data.media.length)setActive(data.media[0].id);
   const newCandidates=data.media.flatMap(m=>m.candidates).filter(c=>!seenCandidates.current.has(c.id));
-  if(newCandidates.length){newCandidates.forEach(c=>seenCandidates.current.add(c.id));setSelected(old=>{const next=new Set(old);for(const m of data.media){if(!newCandidates.some(c=>c.mediaId===m.id))continue;const smaller=m.candidates.filter(c=>c.bytes<m.bytes).sort((a,b)=>a.bytes-b.bytes);if(smaller.length&&!m.candidates.some(c=>next.has(c.id)))next.add(smaller[0].id);}return next;});}
+  if(newCandidates.length){newCandidates.forEach(c=>seenCandidates.current.add(c.id));setSelected(old=>{const next=new Set(old);for(const m of data.media){if(!newCandidates.some(c=>c.mediaId===m.id))continue;const smaller=m.candidates.filter(c=>c.bytes<m.bytes).sort((a,b)=>a.bytes-b.bytes);if(!manualOutputs.current.has(m.id)){for(const c of m.candidates)next.delete(c.id);if(smaller.length)next.add(smaller[0].id);}}return next;});}
  },[data]);
  const visible=data.media.filter(m=>!m.properties||m.properties.kind===tab);
  const media=data.media.find(m=>m.id===active)??visible[0];
@@ -35,8 +35,8 @@ export default function App(){
  useEffect(()=>{
   let current=true;setSourcePreview(null);setCandidatePreview(null);
   if(media?.properties?.kind==='image'&&desktop){
-   void command<string>('image_preview',{id:media.id}).then(p=>{if(current&&p)setSourcePreview(p);});
-   if(candidate)void command<string>('image_preview',{id:candidate.id}).then(p=>{if(current&&p)setCandidatePreview(p);});
+   void invoke<string>('image_preview',{id:media.id}).then(p=>{if(current)setSourcePreview(p);}).catch(e=>{if(current)setError(String(e));});
+   if(candidate)void invoke<string>('image_preview',{id:candidate.id}).then(p=>{if(current)setCandidatePreview(p);}).catch(e=>{if(current)setError(String(e));});
   }
   return()=>{current=false;};
  },[media?.id,candidate?.id]);
@@ -48,17 +48,17 @@ export default function App(){
  const update=(value:Partial<Form>)=>setForm({...form,...value});
  const add=async(folder:boolean)=>{setImporting(true);await command('add_files',{folder});await refresh();setImporting(false);};
  const start=async(explore:boolean)=>{try{const items=selectedMedia.map(m=>[m.id,explore?study(form,m):[config(form,m)]]);if(!items.length){setError('Select supported files first.');return;}const started=await command('start_jobs',{items});await refresh();if(started===undefined)return;setMessage(explore?'Study started. Each setting encodes from the original.':'Compression started. Originals stay unchanged.');}catch(e){setError(String(e));}};
- const check=(id:string)=>setSelected(old=>{const next=new Set(old);next.has(id)?next.delete(id):next.add(id);return next;});
+ const check=(id:string)=>{const m=data.media.find(m=>m.candidates.some(c=>c.id===id));if(m)manualOutputs.current.add(m.id);setSelected(old=>{const next=new Set(old);next.has(id)?next.delete(id):next.add(id);return next;});};
  const checkInput=(id:string)=>setInputs(old=>{const next=new Set(old);next.has(id)?next.delete(id):next.add(id);return next;});
  const exportFiles=async()=>{setExporting(true);const paths=await command<string[]>('export_candidates',{ids:[...selected],report});if(paths?.length)setMessage(`Exported ${paths.length} file${paths.length===1?'':'s'}. Originals are unchanged.`);await refresh();setExporting(false);};
- const playId=async(id:string,pos=play.position)=>{await command('play_media',{id,position:pos});};
+ const playId=async(id:string,pos:number|null=null)=>{await command('play_media',{id,position:pos});};
  const displayBytes=data.media.reduce((sum,m)=>sum+m.bytes,0);
  const first=Math.max(0,Math.floor(scroll/82)-2),windowRows=visible.slice(first,first+12);
  const imageFormat=form.imageFormat==='same'?media?.properties?.format??'png':form.imageFormat;
  const isLossless=tab==='image'?(form.imageMode==='auto'?imageFormat==='png':form.imageMode==='lossless'):form.audioFormat==='flac';
  const settingsLabel=tab==='image'?'quality':form.audioFormat==='mp3'&&form.useVbr?'VBR quality':'bitrate (kbps)';
  return <div className={`app ${drag?'dragging':''}`}>
-  <header className="topbar"><div className="brand"><Mark/><span>Media Compression</span><span className="badge">LOCAL</span></div><div className="header-right"><span className="privacy"><i/>Your files stay on this device</span><button className="text-button" disabled={busy||!desktop} onClick={async()=>{await command('clear_cache');seen.current.clear();seenCandidates.current.clear();setSelected(new Set());setInputs(new Set());setActive(null);await refresh();}}>Clear workspace</button></div></header>
+  <header className="topbar"><div className="brand"><Mark/><span>Media Compression</span><span className="badge">LOCAL</span></div><div className="header-right"><span className="privacy"><i/>Your files stay on this device</span><button className="text-button" disabled={busy||importing||exporting||!desktop} onClick={async()=>{const cleared=await command<boolean>('clear_cache');if(!cleared)return;manualOutputs.current.clear();seen.current.clear();seenCandidates.current.clear();setSelected(new Set());setInputs(new Set());setActive(null);await refresh();}}>Clear workspace</button></div></header>
   <div className="intro"><div><span className="eyebrow">SMALLER FILES. YOUR CALL.</span><h1>Keep what matters.</h1><p>Compress, compare, and find the right balance for your files.</p></div><div className="summary"><span>{data.media.length}<small>files added</small></span><span>{bytes(displayBytes)}<small>original size</small></span><span>{data.media.reduce((n,m)=>n+m.candidates.length,0)}<small>candidates</small></span></div></div>
   {!desktop&&<div className="notice">Desktop preview · processing requires the installed application. No example results are being presented as measurements.</div>}
   {error&&<div className="alert" role="alert"><span>{error}</span><button aria-label="Dismiss error" onClick={()=>setError('')}>×</button></div>}
@@ -96,5 +96,5 @@ export default function App(){
 }
 function CandidateCard({media,candidate:c,active,selected,onCompare,onSelect}:{media:Media;candidate:Candidate;active:boolean;selected:boolean;onCompare:()=>void;onSelect:()=>void}){
  const saved=savings(media.bytes,c.bytes);
- return <article className={`candidate ${active?'active':''}`}><label className="candidate-checkbox"><input type="checkbox" aria-label={`Export ${label(c.settings[0])}`} checked={selected} onChange={onSelect}/></label><button className="candidate-body" onClick={onCompare}><div><strong>{label(c.settings[0])}</strong><small>{c.settings.length>1?`${c.settings.length} settings produced identical bytes`:'Verified output'}</small></div><div className="candidate-size"><strong>{bytes(c.bytes)}</strong><small className={saved>0?'saved':'larger'}>{saved>0?`${saved.toFixed(1)}% smaller`:'No size saving'}</small></div></button>{c.exported.length>0&&<span className="exported-label">Exported</span>}</article>;
+ return <article className={`candidate ${active?'active':''}`}><label className="candidate-checkbox"><input type="checkbox" aria-label={`Export ${label(c.settings[0])}`} checked={selected} onChange={onSelect}/></label><button className="candidate-body" onClick={onCompare}><div><strong>{label(c.settings[0])}</strong><small>{c.settings.length>1?`${c.settings.length} settings produced identical bytes`:'Verified output'}</small></div><div className="candidate-size"><strong>{bytes(c.bytes)}</strong><small className={saved>0?'saved':'larger'}>{saved>0?`${saved.toFixed(1)}% smaller`:'No size saving'}</small></div></button><details className="settings-detail"><summary>Settings</summary><pre>{JSON.stringify(c.settings,null,2)}</pre></details>{c.exported.length>0&&<span className="exported-label">Exported</span>}</article>;
 }

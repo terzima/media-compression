@@ -1,10 +1,12 @@
 use crate::{settings, Diagnostics, ImageRequest, ImageResult, Properties};
 use anyhow::{bail, Context, Result};
 use image::{DynamicImage, ImageDecoder, ImageFormat, ImageReader, RgbaImage};
-use lcms2::{ColorSpaceSignature, Intent, PixelFormat, Profile, Transform};
+use lcms2::{
+    CIExyY, CIExyYTRIPLE, ColorSpaceSignature, Intent, PixelFormat, Profile, ToneCurve, Transform,
+};
 use std::{
     fs::File,
-    io::{BufReader, Write},
+    io::{BufReader, Read, Seek, SeekFrom, Write},
     path::Path,
     process::Command,
 };
@@ -27,7 +29,9 @@ fn open(path: &Path) -> Result<(DynamicImage, Properties, Option<Vec<u8>>)> {
                 bail!("Animated WebP is outside this release");
             }
         }
-        ImageFormat::Jpeg => {}
+        ImageFormat::Jpeg => {
+            validate_jpeg_header(path)?;
+        }
         _ => bail!("Use static PNG, JPEG or WebP"),
     }
     let mut reader = ImageReader::open(path)?.with_guessed_format()?;
@@ -42,7 +46,13 @@ fn open(path: &Path) -> Result<(DynamicImage, Properties, Option<Vec<u8>>)> {
         bail!("Image exceeds the 50-megapixel processing limit");
     }
     let color = decoder.color_type();
-    let icc = decoder.icc_profile()?;
+    let mut icc = decoder.icc_profile()?;
+    if format == ImageFormat::Png {
+        let fallback = png_profile(path)?;
+        if icc.is_none() {
+            icc = fallback;
+        }
+    }
     let orientation = decoder.orientation()?;
     let mut image = DynamicImage::from_decoder(decoder)?;
     image.apply_orientation(orientation);
@@ -57,10 +67,120 @@ fn open(path: &Path) -> Result<(DynamicImage, Properties, Option<Vec<u8>>)> {
         width: Some(image.width()),
         height: Some(image.height()),
         alpha: color.has_alpha(),
+        color_profile: icc.as_deref().map(Profile::new_icc).transpose()?.map(|p| {
+            if p.color_space() == ColorSpaceSignature::GrayData {
+                "gray".into()
+            } else {
+                "rgb".into()
+            }
+        }),
         bit_depth: Some(color.bits_per_pixel() / color.channel_count() as u16).map(|x| x as u8),
         ..Default::default()
     };
     Ok((image, props, icc))
+}
+
+fn validate_jpeg_header(path: &Path) -> Result<()> {
+    let mut reader = BufReader::new(File::open(path)?);
+    let mut start = [0; 2];
+    reader.read_exact(&mut start)?;
+    if start != [0xff, 0xd8] {
+        bail!("Invalid JPEG header");
+    }
+    loop {
+        if reader.stream_position()? > 64 * 1024 * 1024 {
+            bail!("JPEG metadata exceeds the supported header limit");
+        }
+        let mut byte = [0];
+        reader.read_exact(&mut byte)?;
+        if byte[0] != 0xff {
+            bail!("Invalid JPEG marker");
+        }
+        loop {
+            reader.read_exact(&mut byte)?;
+            if byte[0] != 0xff {
+                break;
+            }
+        }
+        let marker = byte[0];
+        if marker == 0xd9 || marker == 0xda {
+            bail!("JPEG frame header missing");
+        }
+        if marker == 0x01 || (0xd0..=0xd7).contains(&marker) {
+            continue;
+        }
+        let mut length = [0; 2];
+        reader.read_exact(&mut length)?;
+        let length = u16::from_be_bytes(length) as i64;
+        if length < 2 {
+            bail!("Invalid JPEG segment");
+        }
+        if [
+            0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf,
+        ]
+        .contains(&marker)
+        {
+            let mut frame = [0; 6];
+            reader.read_exact(&mut frame)?;
+            if frame[0] != 8 {
+                bail!("Only 8-bit JPEG precision is supported");
+            }
+            if ![1, 3].contains(&frame[5]) {
+                bail!(
+                    "CMYK and other non-RGB JPEGs require an explicit RGB conversion before import"
+                );
+            }
+            return Ok(());
+        }
+        reader.seek(SeekFrom::Current(length - 2))?;
+    }
+}
+
+// PNG gAMA/cHRM describe rendering even when there is no embedded ICC profile.
+fn png_profile(path: &Path) -> Result<Option<Vec<u8>>> {
+    let reader = png::Decoder::new(BufReader::new(File::open(path)?)).read_info()?;
+    let info = reader.info();
+    if let Some(c) = info.coding_independent_code_points {
+        if c.color_primaries != 1
+            || c.transfer_function != 13
+            || c.matrix_coefficients != 0
+            || !c.is_video_full_range_image
+        {
+            bail!("HDR and non-sRGB cICP images are not supported without an RGB conversion");
+        }
+    }
+    if info.srgb.is_some() || (info.gama_chunk.is_none() && info.chrm_chunk.is_none()) {
+        return Ok(None);
+    }
+    let gamma = info
+        .gama_chunk
+        .map(|g| g.into_value() as f64)
+        .unwrap_or(1. / 2.2);
+    if !(0.01..=10.).contains(&gamma) {
+        bail!("PNG gamma is outside the supported range");
+    }
+    let c = info.chrm_chunk.unwrap_or(png::SourceChromaticities::new(
+        (0.3127, 0.3290),
+        (0.64, 0.33),
+        (0.30, 0.60),
+        (0.15, 0.06),
+    ));
+    let xy = |v: (png::ScaledFloat, png::ScaledFloat)| CIExyY {
+        x: v.0.into_value() as f64,
+        y: v.1.into_value() as f64,
+        Y: 1.,
+    };
+    let curve = ToneCurve::new(1. / gamma);
+    let profile = Profile::new_rgb(
+        &xy(c.white),
+        &CIExyYTRIPLE {
+            Red: xy(c.red),
+            Green: xy(c.green),
+            Blue: xy(c.blue),
+        },
+        &[&curve, &curve, &curve],
+    )?;
+    Ok(Some(profile.icc()?))
 }
 
 fn normalized(image: &DynamicImage, icc: Option<&[u8]>) -> Result<RgbaImage> {
@@ -76,13 +196,18 @@ fn normalized(image: &DynamicImage, icc: Option<&[u8]>) -> Result<RgbaImage> {
                 PixelFormat::RGB_8,
                 Intent::Perceptual,
             )?;
-            let source: Vec<[u8; 3]> = rgba.pixels().map(|p| [p[0], p[1], p[2]]).collect();
-            let mut target = vec![[0; 3]; source.len()];
-            t.transform_pixels(&source, &mut target);
-            for (p, c) in rgba.pixels_mut().zip(target) {
-                p[0] = c[0];
-                p[1] = c[1];
-                p[2] = c[2];
+            for chunk in rgba.as_mut().chunks_mut(4 * 4096) {
+                let source: Vec<[u8; 3]> = chunk
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|p| [p[0], p[1], p[2]])
+                    .collect();
+                let mut target = vec![[0; 3]; source.len()];
+                t.transform_pixels(&source, &mut target);
+                for (pixel, color) in chunk.as_chunks_mut::<4>().0.iter_mut().zip(target) {
+                    pixel[..3].copy_from_slice(&color);
+                }
             }
         } else if profile.color_space() == ColorSpaceSignature::GrayData {
             let t: Transform<u8, [u8; 3]> = Transform::new(
@@ -92,13 +217,13 @@ fn normalized(image: &DynamicImage, icc: Option<&[u8]>) -> Result<RgbaImage> {
                 PixelFormat::RGB_8,
                 Intent::Perceptual,
             )?;
-            let source: Vec<u8> = rgba.pixels().map(|p| p[0]).collect();
-            let mut target = vec![[0; 3]; source.len()];
-            t.transform_pixels(&source, &mut target);
-            for (p, c) in rgba.pixels_mut().zip(target) {
-                p[0] = c[0];
-                p[1] = c[1];
-                p[2] = c[2];
+            for chunk in rgba.as_mut().chunks_mut(4 * 4096) {
+                let source: Vec<u8> = chunk.as_chunks::<4>().0.iter().map(|p| p[0]).collect();
+                let mut target = vec![[0; 3]; source.len()];
+                t.transform_pixels(&source, &mut target);
+                for (pixel, color) in chunk.as_chunks_mut::<4>().0.iter_mut().zip(target) {
+                    pixel[..3].copy_from_slice(&color);
+                }
             }
         } else {
             bail!("This color profile is not safely supported; convert the source to RGB first");
@@ -128,6 +253,15 @@ fn helper(program: &Path, args: &[String]) -> Result<()> {
             String::from_utf8_lossy(&output.stderr)
         );
     }
+    Ok(())
+}
+fn write_png_profile(path: &Path, rgba: &RgbaImage, icc: Option<&[u8]>) -> Result<()> {
+    let mut info = png::Info::with_size(rgba.width(), rgba.height());
+    info.color_type = png::ColorType::Rgba;
+    info.bit_depth = png::BitDepth::Eight;
+    info.icc_profile = icc.map(|bytes| std::borrow::Cow::Owned(bytes.to_vec()));
+    let mut writer = png::Encoder::with_info(File::create(path)?, info)?.write_header()?;
+    writer.write_image_data(rgba.as_raw())?;
     Ok(())
 }
 fn write_ppm(path: &Path, image: &image::RgbImage) -> Result<()> {
@@ -240,9 +374,17 @@ pub fn execute(request: ImageRequest) -> Result<ImageResult> {
         }
         return Ok(ImageResult{properties:after_props,diagnostics:Diagnostics{ssim_light:Some(1.),ssim_dark:Some(1.),alpha_max_error:Some(0),alpha_mean_error:Some(0.),pixel_identical:Some(true),notices:vec!["Lossless pixels verified; rendering metadata retained and safe ancillary metadata removed".into()],..Default::default()}});
     }
-    let mut reference = normalized(&original, icc.as_deref())?;
+    let mut reference = if options.lossless {
+        original.to_rgba8()
+    } else {
+        normalized(&original, icc.as_deref())?
+    };
     if icc.is_some() {
-        notices.push("Embedded color profile converted to sRGB".into());
+        notices.push(if options.lossless {
+            "Rendering profile preserved".into()
+        } else {
+            "Embedded color profile converted to sRGB".into()
+        });
     }
     if options.format == "jpeg" && props.alpha {
         let bg = options
@@ -258,7 +400,15 @@ pub fn execute(request: ImageRequest) -> Result<ImageResult> {
         notices.push(format!("Transparency flattened onto {bg}"));
     }
     let prepared = temp.path().join("normalized.png");
-    reference.save(&prepared)?;
+    write_png_profile(
+        &prepared,
+        &reference,
+        if options.lossless {
+            icc.as_deref()
+        } else {
+            None
+        },
+    )?;
     let quality = options.quality.unwrap_or(100.).to_string();
     match options.format.as_str() {
         "png" => {
@@ -295,6 +445,8 @@ pub fn execute(request: ImageRequest) -> Result<ImageResult> {
                 "-exact".into(),
                 "-alpha_q".into(),
                 "100".into(),
+                "-metadata".into(),
+                if options.lossless { "icc" } else { "none" }.into(),
             ];
             if options.lossless {
                 args.push("-lossless".into());
@@ -332,6 +484,12 @@ pub fn execute(request: ImageRequest) -> Result<ImageResult> {
     }
     let (after, after_props, after_icc) = open(&request.output)?;
     let candidate = normalized(&after, after_icc.as_deref())?;
+    if options.lossless {
+        if original.to_rgba8() != after.to_rgba8() {
+            bail!("Lossless source pixel verification failed");
+        }
+        reference = normalized(&original, icc.as_deref())?;
+    }
     if candidate.dimensions() != reference.dimensions() {
         bail!("Image dimensions changed");
     }
@@ -374,8 +532,12 @@ pub fn execute(request: ImageRequest) -> Result<ImageResult> {
         }
     };
     notices.push(
-        "Orientation applied; private image metadata removed; output uses sRGB interpretation"
-            .into(),
+        if options.lossless {
+            "Orientation applied; private image metadata removed; rendering profile retained"
+        } else {
+            "Orientation applied; private image metadata removed; output uses sRGB interpretation"
+        }
+        .into(),
     );
     Ok(ImageResult {
         properties: after_props,
@@ -401,5 +563,29 @@ mod tests {
         let image = RgbaImage::from_pixel(1, 1, image::Rgba([255, 0, 0, 0]));
         assert_eq!(composite(&image, [255; 3]).get_pixel(0, 0).0, [255; 3]);
         assert_eq!(composite(&image, [0; 3]).get_pixel(0, 0).0, [0; 3]);
+    }
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::*;
+    #[test]
+    fn png_gamma_conversion() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("gamma.png");
+        let mut encoder = png::Encoder::new(File::create(&path).unwrap(), 1, 1);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_source_gamma(png::ScaledFloat::new(1.));
+        let mut writer = encoder.write_header().unwrap();
+        writer.write_image_data(&[64, 120, 180, 180]).unwrap();
+        drop(writer);
+        let (image, _, icc) = open(&path).unwrap();
+        let converted = normalized(&image, icc.as_deref()).unwrap();
+        assert!(
+            converted.get_pixel(0, 0)[0] > 100,
+            "Raw {:?}, normalized {:?}",
+            image.to_rgba8().get_pixel(0, 0),
+            converted.get_pixel(0, 0)
+        );
     }
 }
