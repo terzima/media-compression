@@ -66,6 +66,12 @@ jobs:
             .tools/patched-sys
             src-tauri/resources/codecs
           key: codecs-${{ matrix.target }}-${{ hashFiles('scripts/build-codecs.mjs', 'scripts/codec-sources.json', 'scripts/pkg-config.mjs', 'scripts/pngquant.Cargo.lock', 'rust-toolchain.toml') }}
+      - name: Rebuild Windows Rust helper with static CRT
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $helper = '.tools/native/pngquant-3.0.3/target/release/pngquant.exe'
+          if (Test-Path $helper) { Remove-Item $helper }
       - run: npm run codecs
       - uses: actions/cache/save@v4
         if: steps.native-cache.outputs.cache-hit != 'true'
@@ -86,6 +92,8 @@ jobs:
         run: node scripts/package-sources.mjs
       - name: Installer build (unsigned CI candidate)
         run: npm exec tauri build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundle }} --ci
+      - name: Audit native runtime dependencies
+        run: node scripts/audit-native.mjs
       - name: Installer checksums and build evidence
         run: node scripts/artifact-checksums.mjs
       - uses: actions/upload-artifact@v4
