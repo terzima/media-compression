@@ -16,7 +16,7 @@ for (const file of files) {
   if (!dependencies.length) throw Error(`No native dependencies identified: ${file}`);
   const unsupported = dependencies.filter(d => windows ? /^(vcruntime|msvcp|libgcc|libstdc\+\+|libwinpthread)/i.test(d) : !d.startsWith('/usr/lib/') && !d.startsWith('/System/Library/'));
   if (unsupported.length) throw Error(`Unbundled native dependencies in ${file}: ${unsupported.join(', ')}`);
-  evidence.push({ filename:path.basename(file), sha256:createHash('sha256').update(await readFile(file)).digest('hex'), dependencies });
+  evidence.push({ filename:path.basename(file), sha256:createHash('sha256').update(await readFile(file)).digest('hex'), dependencies, inspectionOutputBytes:Buffer.byteLength(result.stdout) });
 }
 await mkdir('artifacts',{recursive:true});
 await writeFile('artifacts/native-dependencies.json',JSON.stringify({schemaVersion:1,platform:process.platform,target:target||process.arch,evidence},null,2)+'\n');
