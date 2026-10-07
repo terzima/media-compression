@@ -180,7 +180,17 @@ fn png_profile(path: &Path) -> Result<Option<Vec<u8>>> {
         },
         &[&curve, &curve, &curve],
     )?;
-    Ok(Some(profile.icc()?))
+    let mut bytes = profile.icc()?;
+    // Synthetic profiles must not introduce wall-clock-dependent candidate/cache bytes.
+    for (field, value) in bytes[24..36]
+        .as_chunks_mut::<2>()
+        .0
+        .iter_mut()
+        .zip([2000u16, 1, 1, 0, 0, 0])
+    {
+        field.copy_from_slice(&value.to_be_bytes());
+    }
+    Ok(Some(bytes))
 }
 
 fn normalized(image: &DynamicImage, icc: Option<&[u8]>) -> Result<RgbaImage> {

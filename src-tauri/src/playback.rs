@@ -43,7 +43,7 @@ impl Playback {
         }));
         let state = info.clone();
         std::thread::spawn(move || {
-            let position = Arc::new(AtomicU64::new(0));
+            let mut position = Arc::new(AtomicU64::new(0));
             let loops = Arc::new(Mutex::new(None));
             let mut device = None;
             let mut player: Option<Player> = None;
@@ -77,7 +77,7 @@ impl Playback {
                             if let Some(old) = player.take() {
                                 old.stop();
                             }
-                            position.store(sample, Ordering::Relaxed);
+                            position = Arc::new(AtomicU64::new(sample));
                             shape = (rate, channels);
                             let source = PcmSource {
                                 file: BufReader::new(file),
@@ -141,8 +141,11 @@ impl Playback {
                     }
                 }
                 let mut info = state.lock().unwrap();
-                info.position =
-                    position.load(Ordering::Relaxed) as f64 / (shape.0 as f64 * shape.1 as f64);
+                info.position = if info.id.is_none() {
+                    0.
+                } else {
+                    position.load(Ordering::Relaxed) as f64 / (shape.0 as f64 * shape.1 as f64)
+                };
                 if player.as_ref().is_some_and(|p| p.empty()) {
                     info.paused = true;
                 }
@@ -218,5 +221,75 @@ impl Source for PcmSource {
     }
     fn total_duration(&self) -> Option<Duration> {
         Some(Duration::from_secs_f64(self.duration))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn pcm_seek_and_loop_keep_channel_alignment() {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        use std::io::Write;
+        for value in [1f32, 2., 3., 4., 5., 6.] {
+            file.write_all(&value.to_le_bytes()).unwrap();
+        }
+        file.flush().unwrap();
+        let position = Arc::new(AtomicU64::new(0));
+        let loops = Arc::new(Mutex::new(Some((0., 1.))));
+        let mut source = PcmSource {
+            file: BufReader::new(File::open(file.path()).unwrap()),
+            rate: 2,
+            channels: 2,
+            position: position.clone(),
+            loops,
+            duration: 1.5,
+        };
+        assert_eq!(source.next(), Some(1.));
+        assert_eq!(source.next(), Some(2.));
+        assert_eq!(source.next(), Some(3.));
+        assert_eq!(source.next(), Some(4.));
+        assert_eq!(source.next(), Some(1.));
+        assert_eq!(position.load(Ordering::Relaxed), 1);
+    }
+    #[test]
+    #[ignore = "requires an actual audio output device; run on a test installation"]
+    fn native_playback_device_switch_pause_loop_volume() {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        use std::io::Write;
+        for i in 0..44100 * 2 * 3 {
+            file.write_all(&((i as f32 * 0.0627).sin() * 0.1).to_le_bytes())
+                .unwrap();
+        }
+        file.flush().unwrap();
+        let playback = Playback::new();
+        playback.control("volume", Some(0.), None).unwrap();
+        playback.play("original".into(), file.path().into(), 44100, 2, 0.);
+        let start = std::time::Instant::now();
+        loop {
+            let info = playback.info();
+            assert!(info.error.is_none(), "{:?}", info.error);
+            if info.position > 0.1 {
+                break;
+            }
+            assert!(start.elapsed() < Duration::from_secs(3));
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        playback.control("pause", None, None).unwrap();
+        std::thread::sleep(Duration::from_millis(80));
+        assert!(playback.info().paused);
+        let position = playback.info().position;
+        playback.play("candidate".into(), file.path().into(), 44100, 2, position);
+        std::thread::sleep(Duration::from_millis(80));
+        assert_eq!(playback.info().id.as_deref(), Some("candidate"));
+        assert!(playback.info().position >= position);
+        assert_eq!(playback.info().volume, 0.);
+        playback.control("loop", Some(0.), Some(0.25)).unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(playback.info().position < 0.30);
+        playback.control("stop", None, None).unwrap();
+        std::thread::sleep(Duration::from_millis(80));
+        assert!(playback.info().id.is_none());
+        assert_eq!(playback.info().position, 0.);
     }
 }

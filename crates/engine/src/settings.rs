@@ -74,19 +74,33 @@ pub fn validate(s: &Settings, p: &Properties) -> Result<()> {
                 .bitrate
                 .ok_or_else(|| anyhow::anyhow!("Choose a bitrate in kbps"))?;
             let (min, max) = match s.format.as_str() {
-                "opus" => (6, 510),
-                "mp3" => (8, 320),
-                _ => (1, 1024),
+                "opus" => (0.5, 256. * p.channels.unwrap_or(2) as f64),
+                "mp3" => (8., 320.),
+                _ => (
+                    0.001,
+                    output_rate(s, p) as f64 * 6. * p.channels.unwrap_or(2) as f64 / 1000.,
+                ),
             };
-            if s.format == "mp3"
-                && ![
-                    8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 192, 224, 256, 320,
-                ]
-                .contains(&b)
-            {
-                bail!("MP3 constant bitrate must be a supported MPEG bitrate (8,16,24,32,40,48,56,64,80,96,112,128,144,160,192,224,256,320 kbps); use VBR for a continuous quality range");
+            if s.format == "mp3" {
+                let rate = output_rate(s, p);
+                let allowed: &[u32] = if rate >= 32000 {
+                    &[
+                        32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320,
+                    ]
+                } else if rate >= 16000 {
+                    &[8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160]
+                } else {
+                    &[8, 16, 24, 32, 40, 48, 56, 64]
+                };
+                if b.fract() != 0. || !allowed.contains(&(b as u32)) {
+                    bail!("At {rate} Hz, MP3 constant bitrate must be one of {allowed:?} kbps; VBR provides a continuous quality control");
+                }
             }
-            if b < min || b > max {
+            if !b.is_finite()
+                || (b * 1000. - (b * 1000.).round()).abs() > 0.000001
+                || b < min
+                || b > max
+            {
                 bail!("Bitrate must be {min}–{max} kbps; the encoder may reject incompatible rate/channel combinations");
             }
         }
@@ -171,5 +185,40 @@ mod tests {
         assert_eq!(output_rate(&s, &p), 48000);
         s.format = "aac".into();
         assert_eq!(output_rate(&s, &p), 44100);
+    }
+    #[test]
+    fn audio_ranges_follow_codec_and_channel_limits() {
+        let mut p = Properties {
+            kind: "audio".into(),
+            channels: Some(1),
+            sample_rate: Some(44100),
+            ..Default::default()
+        };
+        let mut s = setting();
+        s.format = "opus".into();
+        s.bitrate = Some(0.5);
+        assert!(validate(&s, &p).is_ok());
+        s.bitrate = Some(256.);
+        assert!(validate(&s, &p).is_ok());
+        s.bitrate = Some(256.001);
+        assert!(validate(&s, &p).is_err());
+        p.channels = Some(2);
+        s.bitrate = Some(512.);
+        assert!(validate(&s, &p).is_ok());
+        s.bitrate = Some(f64::NAN);
+        assert!(validate(&s, &p).is_err());
+        s.format = "aac".into();
+        s.bitrate = Some(529.2);
+        assert!(validate(&s, &p).is_ok());
+        s.bitrate = Some(529.201);
+        assert!(validate(&s, &p).is_err());
+        s.format = "mp3".into();
+        p.sample_rate = Some(8000);
+        s.bitrate = Some(64.);
+        assert!(validate(&s, &p).is_ok());
+        s.bitrate = Some(80.);
+        assert!(validate(&s, &p).is_err());
+        s.bitrate = Some(8.5);
+        assert!(validate(&s, &p).is_err());
     }
 }

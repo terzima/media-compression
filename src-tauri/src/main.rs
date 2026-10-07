@@ -1,20 +1,27 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod playback;
 use media_engine::{Engine, Settings, Snapshot, Tools};
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+};
 use tauri::{Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 struct AppState {
     engine: Result<Arc<Engine>, String>,
     playback: playback::Playback,
+    play_request: AtomicU64,
 }
 fn engine(state: &AppState) -> Result<Arc<Engine>, String> {
     state.engine.clone()
 }
 #[tauri::command]
 fn encoder_capabilities() -> serde_json::Value {
-    serde_json::json!({"schemaVersion":1,"image":{"jpeg":{"lossless":false,"quality":[0,100],"integerQuality":true},"webp":{"lossless":true,"quality":[0,100],"integerQuality":false,"effort":[0,6]},"png":{"lossless":true,"quality":[0,100],"integerQuality":true,"losslessEffort":[0,6],"paletteSpeed":[1,11]}},"audio":{"aac":{"bitrateKbps":[1,1024],"sampleRates":[7350,8000,11025,12000,16000,22050,24000,32000,44100,48000,64000,88200,96000]},"mp3":{"vbrQuality":[0,9.999],"bitratesKbps":[8,16,24,32,40,48,56,64,80,96,112,128,144,160,192,224,256,320],"effort":[0,9]},"opus":{"bitrateKbps":[6,510],"sampleRate":48000,"effort":[0,10]},"flac":{"lossless":true,"integerBitDepths":[16,24],"effort":[0,12]}},"maxWorkers":2,"maxStudySettings":512,"maxImagePixels":50000000,"notice":"Rate, channel and codec combinations are validated; a valid extreme setting may still fail for a particular source."})
+    serde_json::json!({"schemaVersion":1,"image":{"jpeg":{"lossless":false,"quality":[0,100],"integerQuality":true},"webp":{"lossless":true,"quality":[0,100],"integerQuality":false,"effort":[0,6]},"png":{"lossless":true,"quality":[0,100],"integerQuality":true,"losslessEffort":[0,6],"paletteSpeed":[1,11]}},"audio":{"aac":{"bitrateKbps":[0.001,1152],"maximumDependsOnRateAndChannels":true,"sampleRates":[7350,8000,11025,12000,16000,22050,24000,32000,44100,48000,64000,88200,96000]},"mp3":{"vbrQuality":[0,9.999],"bitratesKbps":[8,16,24,32,40,48,56,64,80,96,112,128,144,160,192,224,256,320],"effort":[0,9]},"opus":{"bitrateKbps":[0.5,512],"maximumKbpsPerChannel":256,"sampleRate":48000,"effort":[0,10]},"flac":{"lossless":true,"integerBitDepths":[16,24],"effort":[0,12]}},"maxWorkers":2,"maxStudySettings":512,"maxImagePixels":50000000,"notice":"Rate, channel and codec combinations are validated; a valid extreme setting may still fail for a particular source."})
 }
 #[tauri::command]
 fn snapshot(state: State<AppState>) -> Result<Snapshot, String> {
@@ -108,6 +115,9 @@ fn playback_control(
     value: Option<f64>,
     end: Option<f64>,
 ) -> Result<(), String> {
+    if ["stop", "pause"].contains(&action.as_str()) {
+        state.play_request.fetch_add(1, Ordering::SeqCst);
+    }
     state.playback.control(&action, value, end)
 }
 #[tauri::command]
@@ -119,6 +129,7 @@ async fn play_media(
     if position.is_some_and(|v| !v.is_finite() || v < 0.) {
         return Err("Playback position is invalid".into());
     }
+    let request = state.play_request.fetch_add(1, Ordering::SeqCst) + 1;
     let engine = engine(&state)?;
     let key = id.clone();
     let (path, rate, channels) = tauri::async_runtime::spawn_blocking(move || {
@@ -126,6 +137,9 @@ async fn play_media(
     })
     .await
     .map_err(|e| e.to_string())??;
+    if state.play_request.load(Ordering::SeqCst) != request {
+        return Ok(());
+    }
     state.playback.play(
         id,
         path,
@@ -172,6 +186,7 @@ fn main() {
             app.manage(AppState {
                 engine,
                 playback: playback::Playback::new(),
+                play_request: AtomicU64::new(0),
             });
             Ok(())
         })

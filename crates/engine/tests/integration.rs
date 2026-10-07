@@ -10,7 +10,9 @@ fn tools() -> Tools {
         .join("../..")
         .canonicalize()
         .unwrap();
-    let dir = root.join("src-tauri/resources/codecs");
+    let dir = std::env::var_os("MEDIA_CODEC_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| root.join("src-tauri/resources/codecs"));
     let ext = if cfg!(windows) { ".exe" } else { "" };
     let target = std::env::var("MEDIA_BUILD_TARGET").unwrap_or_else(|_| {
         if cfg!(windows) {
@@ -23,7 +25,9 @@ fn tools() -> Tools {
         .into()
     });
     Tools {
-        worker: root.join(format!("src-tauri/binaries/media-worker-{target}{ext}")),
+        worker: std::env::var_os("MEDIA_WORKER_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| root.join(format!("src-tauri/binaries/media-worker-{target}{ext}"))),
         ffmpeg: dir.join(format!("ffmpeg{ext}")),
         ffprobe: dir.join(format!("ffprobe{ext}")),
         pngquant: dir.join(format!("pngquant{ext}")),
@@ -166,9 +170,9 @@ fn actual_audio_formats_timing_and_lossless_samples() {
     engine.import(vec![path.clone()]).unwrap();
     let id = engine.snapshot().media[0].id.clone();
     let options = [
-        ("aac", Some(128), None),
+        ("aac", Some(128.), None),
         ("mp3", None, Some(4.)),
-        ("opus", Some(96), None),
+        ("opus", Some(96.), None),
         ("flac", None, None),
     ]
     .map(|(format, bitrate, vbr_quality)| Settings {

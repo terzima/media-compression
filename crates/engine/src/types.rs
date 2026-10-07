@@ -7,7 +7,7 @@ pub struct Settings {
     pub format: String,
     pub lossless: bool,
     pub quality: Option<f64>,
-    pub bitrate: Option<u32>,
+    pub bitrate: Option<f64>,
     pub vbr_quality: Option<f64>,
     pub effort: Option<u8>,
     pub background: Option<String>,
@@ -24,6 +24,7 @@ pub struct Properties {
     pub color_profile: Option<String>,
     pub sample_rate: Option<u32>,
     pub channels: Option<u16>,
+    pub channel_layout: Option<String>,
     pub duration: Option<f64>,
     pub sample_format: Option<String>,
 }

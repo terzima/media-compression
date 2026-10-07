@@ -21,6 +21,7 @@ pub struct Engine {
     cancels: Mutex<HashMap<String, Arc<AtomicBool>>>,
     busy: AtomicBool,
     image_gate: Mutex<()>,
+    operations: Mutex<()>,
     notify: Box<dyn Fn() + Send + Sync>,
     tool_identity: String,
     _lock: File,
@@ -109,6 +110,7 @@ impl Engine {
             cancels: Mutex::new(HashMap::new()),
             busy: AtomicBool::new(false),
             image_gate: Mutex::new(()),
+            operations: Mutex::new(()),
             notify: Box::new(notify),
             tool_identity: hex::encode(identity.finalize()),
             _lock: lock,
@@ -121,6 +123,7 @@ impl Engine {
         (self.notify)();
     }
     pub fn import(&self, paths: Vec<PathBuf>) -> Result<()> {
+        let _operation = self.operations.lock().unwrap();
         let mut files = Vec::new();
         let mut seen = HashSet::new();
         for path in paths {
@@ -244,6 +247,11 @@ impl Engine {
         serde_json::from_slice(&bytes).context("Image worker returned invalid data")
     }
     pub fn start(self: &Arc<Self>, items: Vec<(String, Vec<Settings>)>) -> Result<Vec<String>> {
+        let _operation = self.operations.try_lock().map_err(|_| {
+            anyhow::anyhow!(
+                "Wait for import, export, or comparison preparation before starting another batch"
+            )
+        })?;
         if self.busy.swap(true, Ordering::SeqCst) {
             bail!("Wait for the current batch or cancel it before starting another");
         }
@@ -602,7 +610,10 @@ impl Engine {
         ]);
         process::run(&self.tools.ffmpeg, &args, None, cancel, None)?;
         let after = probe_audio(&self.tools, output, cancel)?;
-        if after.channels != p.channels || after.sample_rate != Some(rate) {
+        if after.channels != p.channels
+            || after.channel_layout != p.channel_layout
+            || after.sample_rate != Some(rate)
+        {
             bail!("Encoder changed channels or sample rate unexpectedly");
         }
         let before_frames = self.decoded_frames(&media.path, rate, cancel)?;
@@ -732,6 +743,7 @@ impl Engine {
         self.changed();
     }
     pub fn export(&self, ids: &[String], destination: &Path, report: bool) -> Result<Vec<String>> {
+        let _operation = self.operations.lock().unwrap();
         fs::create_dir_all(destination)?;
         let destination = destination.canonicalize()?;
         let snapshot = self.snapshot();
@@ -842,6 +854,7 @@ impl Engine {
         Ok(results)
     }
     pub fn preview(&self, id: &str) -> Result<String> {
+        let _operation = self.operations.lock().unwrap();
         let data = self.snapshot();
         let (path, props, hash) = if let Some(m) = data.media.iter().find(|m| m.id == id) {
             (
@@ -871,6 +884,7 @@ impl Engine {
         Ok(output.to_string_lossy().into())
     }
     pub fn playback_pcm(&self, id: &str) -> Result<(PathBuf, u32, u16)> {
+        let _operation = self.operations.lock().unwrap();
         let data = self.snapshot();
         let (path, p) = if let Some(m) = data.media.iter().find(|m| m.id == id) {
             (
@@ -892,6 +906,21 @@ impl Engine {
         let rate = p.sample_rate.unwrap_or(48000);
         let channels = p.channels.unwrap_or(1);
         let hash = hash_file(&path)?;
+        let expected = data
+            .media
+            .iter()
+            .find(|m| m.id == id)
+            .map(|m| &m.sha256)
+            .or_else(|| {
+                data.media
+                    .iter()
+                    .flat_map(|m| &m.candidates)
+                    .find(|c| c.id == id)
+                    .map(|c| &c.sha256)
+            });
+        if expected.is_some_and(|v| v != &hash) {
+            bail!("Audio changed; import it again before playback");
+        }
         let dest = self
             .root
             .join("work")
@@ -909,6 +938,9 @@ impl Engine {
         Ok((dest, rate, channels))
     }
     pub fn clear(&self) -> Result<()> {
+        let _operation = self.operations.try_lock().map_err(|_| {
+            anyhow::anyhow!("Wait for import, export, or preview preparation before clearing")
+        })?;
         if self.busy.load(Ordering::SeqCst) {
             bail!("Cancel or finish processing before clearing");
         }
@@ -1059,11 +1091,32 @@ pub fn probe_audio(tools: &Tools, path: &Path, cancel: &AtomicBool) -> Result<Pr
     {
         bail!("Multiple audio tracks are outside this release");
     }
+    let container = data["format"]["format_name"].as_str().unwrap_or("");
+    if ![
+        "wav",
+        "flac",
+        "mp3",
+        "aac",
+        "mov,mp4,m4a,3gp,3g2,mj2",
+        "ogg",
+    ]
+    .contains(&container)
+    {
+        bail!("Audio container {container} is outside this release");
+    }
+    if container == "ogg" && !["opus", "vorbis"].contains(&codec) {
+        bail!("Ogg inputs must contain Opus or Vorbis audio");
+    }
     let channels = stream["channels"]
         .as_u64()
         .context("Unknown audio channel layout")?;
     if !(1..=2).contains(&channels) {
         bail!("Only mono and stereo audio are supported");
+    }
+    let expected_layout = if channels == 1 { "mono" } else { "stereo" };
+    let layout = stream["channel_layout"].as_str().unwrap_or(expected_layout);
+    if layout != expected_layout {
+        bail!("Unsupported channel layout {layout}; only mono and stereo layouts are supported without mixing");
     }
     let rate = stream["sample_rate"]
         .as_str()
@@ -1097,6 +1150,7 @@ pub fn probe_audio(tools: &Tools, path: &Path, cancel: &AtomicBool) -> Result<Pr
         .into(),
         sample_rate: Some(rate),
         channels: Some(channels as u16),
+        channel_layout: Some(layout.into()),
         duration: Some(duration),
         bit_depth: bits,
         sample_format: stream["sample_fmt"].as_str().map(str::to_string),
