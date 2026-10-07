@@ -454,8 +454,24 @@ fn export_rejects_link_traversal_and_redacts_quoted_paths() {
     std::fs::create_dir(&folder).unwrap();
     let path = fixture(&folder);
     std::fs::write(folder.join("broken.png"), b"broken media").unwrap();
+    let blocked = folder.join("unreadable");
+    std::fs::create_dir(&blocked).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o0)).unwrap();
     let engine = engine(&dir.path().join("workspace"));
-    engine.import(vec![folder.clone()]).unwrap();
+    let import = engine.import(vec![folder.clone()]);
+    std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o700)).unwrap();
+    import.unwrap();
+    if unsafe { libc::geteuid() } != 0 {
+        assert!(engine
+            .snapshot()
+            .media
+            .iter()
+            .any(|m| m.name == "unreadable"
+                && m.error
+                    .as_deref()
+                    .is_some_and(|e| e.contains("Cannot read folder"))));
+    }
     let media = engine
         .snapshot()
         .media
@@ -496,4 +512,153 @@ fn export_rejects_link_traversal_and_redacts_quoted_paths() {
     assert!(!text.contains(&dir.path().to_string_lossy().to_string()));
     assert!(text.contains("broken.png"));
     assert!(path.exists());
+}
+
+#[test]
+#[ignore = "requires bundled helpers; verifies long mono, low-rate endpoints and Vorbis input"]
+fn long_audio_endpoint_rates_and_vorbis_input() {
+    fn wav(path: &Path, rate: u32, channels: u16, seconds: u32) {
+        let mut writer = hound::WavWriter::create(
+            path,
+            hound::WavSpec {
+                channels,
+                sample_rate: rate,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            },
+        )
+        .unwrap();
+        for i in 0..rate * seconds {
+            let value = if i == 0 || i == rate * seconds - 1 {
+                16000
+            } else {
+                ((i as f64 * 0.17).sin() * 8000.) as i16
+            };
+            for _ in 0..channels {
+                writer.write_sample(value).unwrap();
+            }
+        }
+        writer.finalize().unwrap();
+    }
+    fn setting(format: &str, bitrate: Option<f64>) -> Settings {
+        Settings {
+            format: format.into(),
+            bitrate,
+            lossless: format == "flac",
+            quality: None,
+            vbr_quality: None,
+            effort: Some(0),
+            background: None,
+        }
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let long = dir.path().join("long-mono.wav");
+    let short = dir.path().join("low-rate.wav");
+    let stereo = dir.path().join("vorbis-source.wav");
+    wav(&long, 16000, 1, 70);
+    wav(&short, 8000, 1, 1);
+    wav(&stereo, 44100, 2, 1);
+    let vorbis = dir.path().join("generated-vorbis.ogg");
+    media_engine::process::run(
+        &tools().ffmpeg,
+        &[
+            "-nostdin".into(),
+            "-v".into(),
+            "error".into(),
+            "-i".into(),
+            stereo.to_string_lossy().into(),
+            "-c:a".into(),
+            "vorbis".into(),
+            "-strict".into(),
+            "experimental".into(),
+            "-metadata".into(),
+            "title=Generated title ✓".into(),
+            "-metadata".into(),
+            "track=3".into(),
+            "-metadata".into(),
+            "comment=Generated fixture comment".into(),
+            vorbis.to_string_lossy().into(),
+        ],
+        None,
+        &std::sync::atomic::AtomicBool::new(false),
+        Some(Duration::from_secs(30)),
+    )
+    .unwrap();
+    let hashes = [&long, &short, &vorbis].map(|p| hash_file(p).unwrap());
+    let engine = engine(&dir.path().join("workspace"));
+    engine
+        .import(vec![long.clone(), short.clone(), vorbis.clone()])
+        .unwrap();
+    let data = engine.snapshot();
+    assert!(
+        data.media.iter().all(|m| m.error.is_none()),
+        "{:?}",
+        data.media
+    );
+    engine
+        .start(vec![
+            (
+                data.media[0].id.clone(),
+                vec![
+                    setting("opus", Some(0.5)),
+                    setting("opus", Some(256.)),
+                    setting("flac", None),
+                ],
+            ),
+            (
+                data.media[1].id.clone(),
+                vec![
+                    setting("mp3", Some(8.)),
+                    setting("mp3", Some(64.)),
+                    setting("aac", Some(48.)),
+                ],
+            ),
+            (data.media[2].id.clone(), vec![setting("opus", Some(96.))]),
+        ])
+        .unwrap();
+    wait(&engine);
+    let data = engine.snapshot();
+    assert!(
+        data.jobs.iter().all(|j| j.errors.is_empty()),
+        "{:?}",
+        data.jobs
+    );
+    assert_eq!(data.media[0].candidates.len(), 3);
+    assert!(
+        data.media[2].candidates[0]
+            .diagnostics
+            .notices
+            .iter()
+            .any(|n| n.contains("Preserved text tags")
+                && n.contains("title")
+                && n.contains("track")
+                && n.contains("comment")),
+        "{:?}",
+        data.media[2].candidates[0].diagnostics
+    );
+    assert_eq!(
+        data.media[0]
+            .candidates
+            .iter()
+            .find(|c| c.settings[0].format == "flac")
+            .unwrap()
+            .properties
+            .bit_depth,
+        Some(16)
+    );
+    let candidates = data
+        .media
+        .iter()
+        .flat_map(|m| &m.candidates)
+        .map(|c| c.path.clone())
+        .collect::<Vec<_>>();
+    engine.import(candidates).unwrap();
+    assert!(
+        engine.snapshot().media.iter().all(|m| m.error.is_none()),
+        "{:?}",
+        engine.snapshot().media
+    );
+    for (path, expected) in [&long, &short, &vorbis].into_iter().zip(hashes) {
+        assert_eq!(hash_file(path).unwrap(), expected);
+    }
 }

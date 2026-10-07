@@ -140,10 +140,10 @@ impl Engine {
                     .unwrap_or_default()
                     .to_string_lossy()
                     .to_string();
-                files.push((path, name));
+                files.push((path, name, None));
             }
         }
-        for (path, relative) in files {
+        for (path, relative, import_error) in files {
             if files_too_many(self.data.lock().unwrap().media.len()) {
                 bail!(
                     "The batch limit is 10,000 files; import another batch after clearing this one"
@@ -169,6 +169,9 @@ impl Engine {
             };
             let result =
                 (|| -> Result<()> {
+                    if let Some(error) = import_error {
+                        bail!("{error}");
+                    }
                     if fs::symlink_metadata(&path)?.file_type().is_symlink() {
                         bail!(
                             "Symbolic links are skipped to prevent cycles or accidental traversal"
@@ -553,17 +556,9 @@ impl Engine {
             "-1",
         ]));
         let probe = self.probe_json(&media.path, cancel)?;
-        for name in [
-            "title", "artist", "album", "date", "track", "genre", "comment",
-        ] {
-            // Only ordinary text tags are copied; no arbitrary cover, chapters or container metadata.
-            if let Some(value) = probe["format"]["tags"]
-                .as_object()
-                .and_then(|o| o.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)))
-                .and_then(|(_, v)| v.as_str())
-            {
-                args.extend(["-metadata".into(), format!("{name}={value}")]);
-            }
+        let text_tags = basic_audio_tags(&probe);
+        for (name, value) in &text_tags {
+            args.extend(["-metadata".into(), format!("{name}={value}")]);
         }
         args.extend([
             "-ar".into(),
@@ -621,6 +616,7 @@ impl Engine {
         let delta = after_frames as i64 - before_frames as i64;
         let tolerance = match s.format.as_str() {
             "aac" => 1024,
+            "mp3" if rate < 32000 => 576,
             "mp3" => 1152,
             "opus" => 960,
             _ => 0,
@@ -633,8 +629,24 @@ impl Engine {
         {
             bail!("FLAC decoded samples differ from source");
         }
-        let mut notices =
-            vec!["Basic text tags preserved; artwork and other metadata omitted".into()];
+        let mut notices = vec!["Artwork and unsupported metadata omitted".into()];
+        if !text_tags.is_empty() {
+            let output_tags = basic_audio_tags(&self.probe_json(output, cancel)?);
+            let mut preserved = Vec::new();
+            for tag in text_tags {
+                if output_tags.contains(&tag) {
+                    preserved.push(tag.0);
+                } else {
+                    notices.push(format!(
+                        "Text tag {} changed or omitted by the output container",
+                        tag.0
+                    ));
+                }
+            }
+            if !preserved.is_empty() {
+                notices.push(format!("Preserved text tags: {}", preserved.join(", ")));
+            }
+        }
         if rate != p.sample_rate.unwrap_or(rate) {
             notices.push(format!(
                 "Sample rate converted from {} to {rate} Hz",
@@ -1037,22 +1049,84 @@ fn safe_parent(root: &Path, relative: &Path) -> Result<PathBuf> {
 fn files_too_many(n: usize) -> bool {
     n >= 10000
 }
+fn basic_audio_tags(probe: &serde_json::Value) -> Vec<(String, String)> {
+    let stream_tags = probe["streams"]
+        .as_array()
+        .and_then(|streams| streams.iter().find(|s| s["codec_type"] == "audio"))
+        .and_then(|stream| stream["tags"].as_object());
+    let entries = probe["format"]["tags"]
+        .as_object()
+        .into_iter()
+        .flat_map(|tags| tags.iter())
+        .chain(stream_tags.into_iter().flat_map(|tags| tags.iter()))
+        .collect::<Vec<_>>();
+    [
+        "title", "artist", "album", "date", "track", "genre", "comment",
+    ]
+    .into_iter()
+    .filter_map(|name| {
+        let aliases: &[&str] = match name {
+            "track" => &["track", "tracknumber"],
+            "comment" => &["comment", "description"],
+            _ => &[name],
+        };
+        entries
+            .iter()
+            .find(|(key, _)| aliases.iter().any(|a| key.eq_ignore_ascii_case(a)))
+            .and_then(|(_, value)| value.as_str())
+            .map(|value| (name.into(), value.into()))
+    })
+    .collect()
+}
 fn collect_files(
     root: &Path,
     dir: &Path,
     prefix: &str,
-    files: &mut Vec<(PathBuf, String)>,
+    files: &mut Vec<(PathBuf, String, Option<String>)>,
 ) -> Result<()> {
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
+    let relative_dir = format!("{prefix}/{}", dir.strip_prefix(root)?.to_string_lossy());
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) => {
+            files.push((
+                dir.into(),
+                relative_dir,
+                Some(format!("Cannot read folder: {e}")),
+            ));
+            return Ok(());
+        }
+    };
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) => {
+                files.push((
+                    dir.into(),
+                    relative_dir.clone(),
+                    Some(format!("Cannot read folder entry: {e}")),
+                ));
+                continue;
+            }
+        };
         let path = entry.path();
-        let ty = entry.file_type()?;
+        let ty = match entry.file_type() {
+            Ok(ty) => ty,
+            Err(e) => {
+                files.push((
+                    path.clone(),
+                    format!("{prefix}/{}", path.strip_prefix(root)?.to_string_lossy()),
+                    Some(format!("Cannot inspect file: {e}")),
+                ));
+                continue;
+            }
+        };
         if ty.is_dir() {
             collect_files(root, &path, prefix, files)?;
         } else {
             files.push((
                 path.clone(),
                 format!("{prefix}/{}", path.strip_prefix(root)?.to_string_lossy()),
+                None,
             ));
         }
         if files.len() > 10000 {
