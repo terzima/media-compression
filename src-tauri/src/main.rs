@@ -33,7 +33,25 @@ fn interrupt_playback(
 }
 #[tauri::command]
 fn encoder_capabilities() -> serde_json::Value {
-    serde_json::json!({"schemaVersion":1,"image":{"jpeg":{"lossless":false,"quality":[0,100],"integerQuality":true},"webp":{"lossless":true,"quality":[0,100],"integerQuality":false,"effort":[0,6]},"png":{"lossless":true,"quality":[0,100],"integerQuality":true,"losslessEffort":[0,6],"paletteSpeed":[1,11]}},"audio":{"aac":{"bitrateKbps":[0.001,1152],"maximumDependsOnRateAndChannels":true,"sampleRates":[7350,8000,11025,12000,16000,22050,24000,32000,44100,48000,64000,88200,96000]},"mp3":{"vbrQuality":[0,9.999],"bitratesKbps":[8,16,24,32,40,48,56,64,80,96,112,128,144,160,192,224,256,320],"effort":[0,9]},"opus":{"bitrateKbps":[0.5,512],"maximumKbpsPerChannel":256,"sampleRate":48000,"effort":[0,10]},"flac":{"lossless":true,"integerBitDepths":[16,24],"effort":[0,12]}},"maxWorkers":2,"maxStudySettings":512,"maxImagePixels":50000000,"notice":"Rate, channel and codec combinations are validated; a valid extreme setting may still fail for a particular source."})
+    media_engine::settings::capabilities()
+}
+#[tauri::command]
+async fn agent_configuration(app: tauri::AppHandle) -> Result<Option<serde_json::Value>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(folder) = app.dialog().file().blocking_pick_folder() else { return Ok(None); };
+        let root=folder.into_path().map_err(|e|e.to_string())?.canonicalize().map_err(|e|e.to_string())?;
+        let ext=if cfg!(windows){".exe"}else{""};
+        #[cfg(debug_assertions)]
+        let command=PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("binaries/media-compression-agent-{}{ext}",env!("MEDIA_TARGET")));
+        #[cfg(not(debug_assertions))]
+        let command=std::env::current_exe().map_err(|e|e.to_string())?.parent().unwrap().join(format!("media-compression-agent{ext}"));
+        if !command.is_file(){return Err("Bundled agent executable is missing; rebuild the desktop package".into());}
+        #[cfg(debug_assertions)]
+        let skill=PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/agent-plugin/skills/media-compression/SKILL.md");
+        #[cfg(not(debug_assertions))]
+        let skill=app.path().resource_dir().map_err(|e|e.to_string())?.join("resources/agent-plugin/skills/media-compression/SKILL.md");
+        Ok(Some(serde_json::json!({"configuration":{"mcpServers":{"media-compression":{"command":command,"args":["mcp","--root",root]}}},"cliPath":command,"skillPath":skill})))
+    }).await.map_err(|e|e.to_string())?
 }
 #[tauri::command]
 fn snapshot(state: State<AppState>) -> Result<Snapshot, String> {
@@ -222,6 +240,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             encoder_capabilities,
+            agent_configuration,
             image_preview,
             snapshot,
             add_files,

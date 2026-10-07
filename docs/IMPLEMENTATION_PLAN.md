@@ -36,6 +36,14 @@ External inputs: signing identity/credentials and access to a clean Windows 11 t
 
 ## Evidence and deviations
 
+### Agent interface extension (authorized 2026-10-07)
+
+Deliver an optional native MCP stdio server and JSON CLI using the existing Rust engine and bundled codecs. Include discoverable tool schemas and a portable compression-study skill. No model/account/API key belongs in this application. Agents choose formats/settings, run real studies, refine candidates, and export explicitly selected results; diagnostic scores do not establish perceptual equivalence.
+
+Acceptance: capabilities/import/study/status/results/preview/cancel/export tools; terminal inspect/study/export with persistent study manifests; bounded folder access, unchanged originals, collision-safe exports and verified cache reuse; separate locked agent workspace that leaves GUI sessions intact; native packaging and installed-agent checks on all three targets. Provide connection configuration from the GUI and document client setup. Signing/clean-machine publication gates remain deferred. Implementation is complete; local interface/engine/frontend checks pass. Native packaging and installed-agent matrix verification are pending.
+
+- Local extension checks: MCP discovery, real image/audio studies, preflight, inline preview, explicit export, cancellation and active-client-disconnect shutdown; CLI saved-study deduplication, aggressive quality, no-overwrite collisions and changed-source rejection; scoped paths and workspace ownership; 12 frontend tests, Rust workspace Clippy and all seven existing bundled-codec integration tests (including the 1,000-file batch). The portable study skill validates. Native installers include the agent executable and skill; each target runs installed-agent checks using bundled helper discovery.
+
 - 2026-10-07: clean standalone repository confirmed; authorized implementation starts on `codex/desktop-v1`.
 - Upstream pins are resolved in committed lockfiles and SHA-256 source records. Glyph algorithms were reviewed and adapted as standalone code; no private media or app integrations were copied. See PROVENANCE.md and DEPENDENCIES.md.
 - Implemented presets, advanced endpoint controls, custom sweeps, two-worker jobs, immediate queued cancellation, verified cache/deduplication, lazy color-managed previews, native audio comparisons, safe export and schema-versioned reports.

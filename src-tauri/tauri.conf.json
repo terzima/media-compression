@@ -35,10 +35,12 @@
       "nsis"
     ],
     "externalBin": [
-      "binaries/media-worker"
+      "binaries/media-worker",
+      "binaries/media-compression-agent"
     ],
     "resources": [
-      "resources/codecs/**/*"
+      "resources/codecs/**/*",
+      "resources/agent-plugin/**/*"
     ],
     "macOS": {
       "minimumSystemVersion": "14.0"

@@ -46,6 +46,10 @@ The desktop build wrapper defaults to CI-style DMG layout so it does not require
 
 See [architecture](docs/ARCHITECTURE.md), [provenance](docs/PROVENANCE.md), and [project brief](docs/PROJECT_BRIEF.md).
 
+## Agents and terminal use
+
+Choose **Agent connection** in the GUI to generate folder-scoped MCP configuration and locate the bundled study skill. The native `media-compression-agent` executable also offers JSON `capabilities`, `inspect`, `study` and `export` commands for agents with terminal access. Both interfaces use the existing engine and bundled codecs. No model/account/API key is added to this app; the connected agent has its own data policies. See [agent setup, tools and JSON examples](docs/AGENT_INTERFACE.md). The GUI remains independently usable.
+
 ## License
 
 Project-authored code is MIT. Dependencies retain their licenses. In particular pngquant/libimagequant are GPL components distributed as a separate executable with corresponding source; FFmpeg/LAME retain LGPL obligations. Each qualified release must include notices, matching source/build material, and checksums.
