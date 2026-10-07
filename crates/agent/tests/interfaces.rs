@@ -173,6 +173,33 @@ impl Drop for Client {
 }
 
 #[test]
+fn setup_discovery_is_json_and_does_not_create_a_workspace() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let workspace = root.join("unused-cache");
+    let mut results = Vec::new();
+    for mode in ["guide", "capabilities", "tools", "config"] {
+        let output = command(&root, &workspace, mode).output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        results.push(serde_json::from_slice::<Value>(&output.stdout).unwrap());
+        assert!(
+            !workspace.exists(),
+            "Discovery must not start an engine/cache"
+        );
+    }
+    assert!(results[0]["instructions"].as_str().unwrap().len() > 100);
+    assert_eq!(results[1]["maxWorkers"], 2);
+    assert_eq!(results[2]["tools"].as_array().unwrap().len(), 11);
+    let server = &results[3]["mcpServers"]["media-compression"];
+    assert!(Path::new(server["command"].as_str().unwrap()).is_file());
+    assert_eq!(server["args"], json!(["mcp", "--root", root]));
+}
+
+#[test]
 fn scoped_paths_and_workspace_ownership_are_checked() {
     use media_agent::session::Scope;
     let dir = tempfile::tempdir().unwrap();
