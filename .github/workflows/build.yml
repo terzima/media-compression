@@ -56,6 +56,15 @@ jobs:
       - name: Rust toolchain
         shell: bash
         run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/debug
+            target/release
+            target/${{ matrix.target }}
+          key: rust-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
       - run: npm ci
       - uses: actions/cache/restore@v4
         id: native-cache
