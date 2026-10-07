@@ -14,6 +14,7 @@ export function config(form:Form,media:Media,index=form.preset):Settings {
 export function study(form:Form,media:Media):Settings[] {
  if(form.mode==='quick'){
   if(media.properties?.kind==='image'){
+   if((media.properties.bitDepth??8)>8&&config(form,media).format==='png')return [{...config(form,media),lossless:true}];
    const baseline=config(form,media);const results=[0,1,2].map(i=>({...config(form,media,i),lossless:false}));
    return baseline.format==='png'||baseline.format==='webp'?[{...baseline,lossless:true},...results]:results;
   }
