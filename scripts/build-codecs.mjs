@@ -86,7 +86,7 @@ if(!existsSync(path.join(prefix,'bin/ffmpeg'+ext))){
 }
 for(const name of ['ffmpeg','ffprobe','cwebp','cjpeg'])await cp(path.join(prefix,'bin',name+ext),path.join(dest,name+ext));
 await cp(path.join(buildDir,'pngquant-3.0.3/target/release/pngquant'+ext),path.join(dest,'pngquant'+ext));
-const versions={platform:process.platform,arch:process.arch,sources,helpers:{}};
+const versions={platform:process.platform,arch:process.arch,sources,helpers:{},build:{node:process.version,recipeSha256:createHash('sha256').update(await readFile(path.join(root,'scripts/build-codecs.mjs'))).digest('hex'),compiler:spawnSync(env.CC||'cc',['--version'],{encoding:'utf8',env}).stdout?.split('\n')[0],cflags:env.CFLAGS,ldflags:env.LDFLAGS,ffmpegFlags:'--disable-gpl --disable-nonfree --disable-network --disable-autodetect --enable-libopus --enable-libmp3lame'}};
 for(const name of ['ffmpeg','ffprobe','pngquant','cwebp','cjpeg']){
  const binary=path.join(dest,name+ext);await chmod(binary,0o755);
  const args=name==='ffmpeg'||name==='ffprobe'?['-version']:name==='pngquant'?['--version']:['-version'];

@@ -6,5 +6,5 @@ export interface Media {id:string;name:string;relativeName:string;bytes:number;s
 export interface Job {id:string;mediaId:string;state:string;stage:string;completed:number;total:number;errors:string[]}
 export interface Snapshot {media:Media[];jobs:Job[];tools:string[]}
 export interface Playback {id:string|null;position:number;duration:number;paused:boolean;volume:number;error:string|null}
-export interface Form {mode:'quick'|'advanced';preset:number;imageFormat:string;audioFormat:string;imageMode:string;quality:number;bitrate:number;vbrQuality:number;useVbr:boolean;effort:number;background:string;flatten:boolean;sweep:string}
+export interface Form {mode:'quick'|'advanced';preset:number;imageFormat:string;audioFormat:string;imageMode:string;quality:number;bitrate:number;vbrQuality:number;useVbr:boolean;effort:number|null;background:string;flatten:boolean;sweep:string}
 export const defaultForm:Form={mode:'quick',preset:1,imageFormat:'same',audioFormat:'aac',imageMode:'auto',quality:80,bitrate:128,vbrQuality:4,useVbr:true,effort:2,background:'#ffffff',flatten:false,sweep:'90,80,65'};

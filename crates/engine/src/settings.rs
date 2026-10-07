@@ -48,6 +48,12 @@ pub fn validate(s: &Settings, p: &Properties) -> Result<()> {
         if !["aac", "mp3", "opus", "flac"].contains(&s.format.as_str()) {
             bail!("Choose AAC, MP3, Opus or FLAC");
         }
+        if s.format == "mp3" && s.effort.is_some_and(|v| v > 9) {
+            bail!("MP3 encoding effort must be 0–9 (lower is slower)");
+        }
+        if s.format == "opus" && s.effort.is_some_and(|v| v > 10) {
+            bail!("Opus encoding effort must be 0–10");
+        }
         if s.format == "flac" {
             if ![Some(16), Some(24)].contains(&p.bit_depth)
                 || p.sample_format.as_deref().unwrap_or("").contains('f')

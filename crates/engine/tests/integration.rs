@@ -395,3 +395,56 @@ fn color_metadata_precision_orientation_and_small_images() {
         assert_eq!(hash_file(&m.path).unwrap(), m.sha256);
     }
 }
+
+#[cfg(unix)]
+#[test]
+#[ignore = "requires bundled helpers"]
+fn export_rejects_link_traversal_and_redacts_quoted_paths() {
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("folder\"quoted");
+    std::fs::create_dir(&folder).unwrap();
+    let path = fixture(&folder);
+    std::fs::write(folder.join("broken.png"), b"broken media").unwrap();
+    let engine = engine(&dir.path().join("workspace"));
+    engine.import(vec![folder.clone()]).unwrap();
+    let media = engine
+        .snapshot()
+        .media
+        .into_iter()
+        .find(|m| m.error.is_none())
+        .unwrap();
+    engine
+        .start(vec![(media.id, vec![image("png", true, 100.)])])
+        .unwrap();
+    wait(&engine);
+    let candidate = engine
+        .snapshot()
+        .media
+        .iter()
+        .flat_map(|m| &m.candidates)
+        .next()
+        .unwrap()
+        .id
+        .clone();
+    let out = dir.path().join("export");
+    let outside = dir.path().join("outside");
+    std::fs::create_dir(&out).unwrap();
+    std::fs::create_dir(&outside).unwrap();
+    std::os::unix::fs::symlink(&outside, out.join("folder\"quoted")).unwrap();
+    assert!(engine
+        .export(std::slice::from_ref(&candidate), &out, true)
+        .is_err());
+    assert!(std::fs::read_dir(&outside).unwrap().next().is_none());
+    std::fs::remove_file(out.join("folder\"quoted")).unwrap();
+    engine.export(&[candidate], &out, true).unwrap();
+    let report = std::fs::read_dir(&out)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| p.extension().is_some_and(|x| x == "json"))
+        .unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&std::fs::read(report).unwrap()).unwrap();
+    let text = value.to_string();
+    assert!(!text.contains(&dir.path().to_string_lossy().to_string()));
+    assert!(text.contains("broken.png"));
+    assert!(path.exists());
+}

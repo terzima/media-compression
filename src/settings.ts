@@ -8,7 +8,7 @@ export function config(form:Form,media:Media,index=form.preset):Settings {
  return {format,lossless,quality:image?(advanced?form.quality:[90,80,65][index]):null,
   bitrate:!image&&format!=='flac'&&!(format==='mp3'&&(!advanced||form.useVbr))?(advanced?form.bitrate:(format==='opus'?(mono?[64,48,32]:[160,96,64]):(mono?[96,64,48]:[192,128,96]))[index]):null,
   vbrQuality:!image&&format==='mp3'&&(!advanced||form.useVbr)?(advanced?form.vbrQuality:[2,4,6][index]):null,
-  effort:format==='flac'?(advanced?form.effort:5):advanced?form.effort:format==='png'&&!lossless?3:2,
+  effort:format==='jpeg'||!image&&format==='aac'?null:advanced?form.effort:format==='flac'||format==='mp3'?5:format==='opus'?10:format==='png'&&!lossless?3:2,
   background:image&&form.flatten?form.background:null};
 }
 export function study(form:Form,media:Media):Settings[] {

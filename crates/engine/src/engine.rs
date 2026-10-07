@@ -589,6 +589,11 @@ impl Engine {
             }
             _ => bail!("Unsupported encoder"),
         }
+        if ["mp3", "opus"].contains(&s.format.as_str()) {
+            if let Some(effort) = s.effort {
+                args.extend(["-compression_level".into(), effort.to_string()]);
+            }
+        }
         args.extend([
             "-threads".into(),
             "1".into(),
@@ -749,12 +754,7 @@ impl Engine {
                 {
                     bail!("Unsafe export path");
                 }
-                let parent = destination.join(relative.parent().unwrap_or(Path::new("")));
-                fs::create_dir_all(&parent)?;
-                let parent = parent.canonicalize()?;
-                if !parent.starts_with(&destination) {
-                    bail!("Export folder resolves outside the destination");
-                }
+                let parent = safe_parent(&destination, relative.parent().unwrap_or(Path::new("")))?;
                 if fs2::available_space(&parent)? < candidate.bytes {
                     bail!("Not enough export disk space");
                 }
@@ -763,6 +763,12 @@ impl Engine {
                 let mut stage = tempfile::NamedTempFile::new_in(&parent)?;
                 std::io::copy(&mut File::open(&candidate.path)?, &mut stage)?;
                 stage.as_file().sync_all()?;
+                if hash_file(stage.path())? != candidate.sha256 {
+                    bail!("Candidate changed during export; staged output discarded");
+                }
+                if hash_file(&media.path)? != media.sha256 {
+                    bail!("Source changed during export; staged output discarded");
+                }
                 let mut index = 1;
                 let exported = loop {
                     let name = if index == 1 {
@@ -808,19 +814,24 @@ impl Engine {
                     c.as_object_mut().unwrap().remove("preview");
                 }
             }
-            let mut text = serde_json::to_string_pretty(
+            let paths = snapshot
+                .media
+                .iter()
+                .map(|m| {
+                    (
+                        m.path.to_string_lossy().into_owned(),
+                        m.relative_name.clone(),
+                    )
+                })
+                .chain(std::iter::once((
+                    self.root.to_string_lossy().into_owned(),
+                    "[workspace]".into(),
+                )))
+                .collect::<Vec<_>>();
+            redact_paths(&mut value, &paths);
+            let text = serde_json::to_string_pretty(
                 &serde_json::json!({"schemaVersion":1,"applicationVersion":env!("CARGO_PKG_VERSION"),"results":value,"exported":results}),
             )?;
-            for media in &snapshot.media {
-                text = text.replace(
-                    &media.path.to_string_lossy().replace('\\', "\\\\"),
-                    &media.relative_name,
-                );
-            }
-            text = text.replace(
-                &self.root.to_string_lossy().replace('\\', "\\\\"),
-                "[workspace]",
-            );
             let mut stage = tempfile::NamedTempFile::new_in(&destination)?;
             stage.write_all(text.as_bytes())?;
             stage.as_file().sync_all()?;
@@ -915,6 +926,60 @@ impl Engine {
         Ok(())
     }
 }
+fn redact_paths(value: &mut serde_json::Value, paths: &[(String, String)]) {
+    match value {
+        serde_json::Value::String(text) => {
+            for (source, label) in paths {
+                *text = text
+                    .replace(source, label)
+                    .replace(&source.replace('\\', "/"), label);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                redact_paths(item, paths);
+            }
+        }
+        serde_json::Value::Object(items) => {
+            for item in items.values_mut() {
+                redact_paths(item, paths);
+            }
+        }
+        _ => {}
+    }
+}
+fn safe_parent(root: &Path, relative: &Path) -> Result<PathBuf> {
+    let mut parent = root.to_path_buf();
+    for component in relative.components() {
+        let Component::Normal(name) = component else {
+            bail!("Unsafe export path");
+        };
+        parent.push(name);
+        match fs::symlink_metadata(&parent) {
+            Ok(metadata) => {
+                let redirect = metadata.file_type().is_symlink();
+                #[cfg(windows)]
+                let redirect = {
+                    use std::os::windows::fs::MetadataExt;
+                    redirect || metadata.file_attributes() & 0x400 != 0
+                };
+                if redirect || !metadata.is_dir() {
+                    bail!("Export subfolder is a link or is not a directory");
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                fs::create_dir(&parent)?;
+            }
+            Err(error) => return Err(error.into()),
+        }
+        parent = parent.canonicalize()?;
+        if !parent.starts_with(root) {
+            bail!("Export folder resolves outside the destination");
+        }
+    }
+    Ok(parent)
+}
+
 fn files_too_many(n: usize) -> bool {
     n >= 10000
 }
