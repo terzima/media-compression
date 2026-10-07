@@ -95,6 +95,10 @@ jobs:
         run: npm exec tauri build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundle }} --ci
       - name: Audit native runtime dependencies
         run: node scripts/audit-native.mjs
+      - name: Check installed bundle and its helpers
+        env:
+          MEDIA_INSTALL_LAUNCH: '1'
+        run: node scripts/check-installed-bundle.mjs
       - name: Installer checksums and build evidence
         run: node scripts/artifact-checksums.mjs
       - uses: actions/upload-artifact@v4
