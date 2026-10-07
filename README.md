@@ -23,14 +23,18 @@ The installed application bundles its codecs and needs no account, network, Pyth
 After installing the desktop app, copy and paste this request into your agent. Replace the bracketed folder with the folder containing your media and intended export locations:
 
 ```text
-Set up Media Compression for this agent using the setup instructions at
-https://github.com/terzima/media-compression/blob/codex/desktop-v1/README.md#setup-instructions-for-agents.
-Grant access only to [my media folder]. Prefer its local MCP tools; use its
-bundled JSON CLI if MCP is unavailable. Load its compression-study guide,
-verify the connection, and tell me when it is ready. Preserve my originals.
+Set up the installed Media Compression app for this agent. Find its bundled
+media-compression-agent executable and read --help, guide, capabilities and tools.
+Grant access only to [my media folder] using config --root. Prefer its local
+stdio MCP tools: configure this client while preserving existing servers,
+load the bundled compression-study skill, and verify tool discovery and
+compression_capabilities. If MCP cannot be configured or reloaded here, use
+its full-path JSON CLI and embedded guide instead. Tell me which interface
+is ready and which folder is granted. Do not compress or export files during
+setup; preserve my originals.
 ```
 
-Your agent needs local terminal access to this computer and, for MCP, a client that supports local stdio servers. You do not need to know shell commands. If you leave the folder unspecified, the agent should ask which folder to use. Setup does not start compression or export. During development, these instructions apply to a build containing the agent extension; signed stable installers remain a release gate.
+Your agent needs local terminal access to this computer and, for MCP, a client that supports local stdio servers. This request is self-contained and does not require the agent to fetch a GitHub page. You do not need to know shell commands. If you leave the folder unspecified, the agent should ask which folder to use. Setup does not start compression or export. During development, these instructions apply to a build containing the agent extension; signed stable installers remain a release gate.
 
 Once setup is complete, try: **“Study this file and show me the smallest candidates with good quality, explain the tradeoffs, and let me compare them before export.”** The agent measures real outputs and refines settings; lossy quality still depends on your requirements and visual/listening feedback.
 
