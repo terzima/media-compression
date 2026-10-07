@@ -65,6 +65,23 @@ fn hash_file_cancelable(path: &Path, cancel: &AtomicBool) -> Result<String> {
     }
     Ok(hex::encode(hash.finalize()))
 }
+fn copy_cancelable(
+    mut input: impl Read,
+    mut output: impl Write,
+    cancel: &AtomicBool,
+) -> Result<()> {
+    let mut buffer = [0u8; 65536];
+    loop {
+        if cancel.load(Ordering::Relaxed) {
+            bail!("Canceled");
+        }
+        let n = input.read(&mut buffer)?;
+        if n == 0 {
+            return Ok(());
+        }
+        output.write_all(&buffer[..n])?;
+    }
+}
 fn strings(args: &[&str]) -> Vec<String> {
     args.iter().map(|s| s.to_string()).collect()
 }
@@ -530,8 +547,11 @@ impl Engine {
             };
             // Same-filesystem staging; cache keys never overwrite an unverified candidate.
             let mut cache_stage = tempfile::NamedTempFile::new_in(self.root.join("cache"))?;
-            std::io::copy(&mut File::open(&stage)?, &mut cache_stage)?;
+            copy_cancelable(File::open(&stage)?, &mut cache_stage, cancel)?;
             cache_stage.as_file().sync_all()?;
+            if cancel.load(Ordering::Relaxed) {
+                bail!("Canceled");
+            }
             match cache_stage.persist_noclobber(&output) {
                 Ok(_) => {}
                 Err(e) if e.error.kind() == std::io::ErrorKind::AlreadyExists => {
