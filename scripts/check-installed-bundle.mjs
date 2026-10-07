@@ -31,6 +31,10 @@ if(windows){
     {env:{...process.env,MEDIA_WEBVIEW_INSTALLER:runtime},encoding:'utf8'});
   if(inspect.status!==0)throw Error('WebView2 provenance inspection failed');
   evidence.webview2={filename:path.basename(runtime),sha256:await hash(runtime),...JSON.parse(inspect.stdout)};
+  if(!evidence.webview2.signatureStatus){
+    evidence.webview2.signatureStatus='Unavailable';
+    evidence.webview2.signatureMessage=inspect.stderr?.trim()||'Authenticode inspection returned no status or signer.';
+  }
   evidence.webview2.source='https://go.microsoft.com/fwlink/?linkid=2124701';
   evidence.webview2.qualifiedSignature=evidence.webview2.signatureStatus==='Valid'&&!!evidence.webview2.signer?.includes('Microsoft Corporation');
   await writeFile('artifacts/webview2-provenance.json',JSON.stringify(evidence.webview2,null,2)+'\n');

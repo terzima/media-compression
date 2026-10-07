@@ -2,7 +2,7 @@
 
 A local desktop app for compressing images and audio, inspecting actual candidates, and exporting without changing originals. macOS 14+ (Apple Silicon/Intel) and Windows 11 x64 are first-release targets.
 
-The implementation is under release qualification. A Mac ARM64 app/DMG builds and the GUI runs; native CI builds/tests all three targets. Unsigned CI artifacts are development candidates, not a qualified stable release. See [implementation milestones](docs/IMPLEMENTATION_PLAN.md) and [platform evidence](docs/RELEASE_QUALIFICATION.md).
+The development GUI implements presets, custom controls, real-data studies, comparisons and safe export. Native CI builds/tests Apple Silicon, Intel Mac and Windows x64, and uploads installers with checksums, source/notices and verification records. Unsigned artifacts are development candidates; signing and clean minimum-OS qualification are deferred. See [implementation milestones](docs/IMPLEMENTATION_PLAN.md) and [platform evidence](docs/RELEASE_QUALIFICATION.md).
 
 ## Using the app
 
