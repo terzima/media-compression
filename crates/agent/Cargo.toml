@@ -1,0 +1,24 @@
+[package]
+name = "media-agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "media-compression-agent"
+path = "src/main.rs"
+
+[dependencies]
+media-engine = { path = "../engine" }
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rmcp = { version = "=3.0.1", default-features = false, features = ["server", "transport-io"] }
+tokio = { version = "=1.53.2", features = ["rt-multi-thread", "macros", "io-std", "signal", "time"] }
+dirs = "=7.0.0"
+tempfile = "3.0"
+base64 = "=0.22.1"
+image = { version = "=0.25.10", default-features = false, features = ["png"] }
+
+[dev-dependencies]
+hound = "3.5"

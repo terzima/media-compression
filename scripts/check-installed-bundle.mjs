@@ -15,7 +15,7 @@ function run(program,args,env=process.env){const r=spawnSync(program,args,{env,s
 async function find(root,name){for(const e of await readdir(root,{withFileTypes:true})){const p=path.join(root,e.name);if(e.isFile()&&e.name.toLowerCase()===name.toLowerCase())return p;if(e.isDirectory()){const found=await find(p,name);if(found)return found;}}return null;}
 const hash=async p=>createHash('sha256').update(await readFile(p)).digest('hex');
 await rm(destination,{recursive:true,force:true});await mkdir(destination,{recursive:true});
-let application,codecs,worker;
+let application,codecs,worker,agent;
 if(windows){
   const files=await readdir(path.join(bundle,'nsis'));
   const installer=files.find(n=>n.endsWith('.exe'));if(!installer)throw Error('NSIS installer missing');
@@ -45,6 +45,7 @@ if(windows){
   application=await find(destination,'media-compression.exe')||await find(destination,'Media Compression.exe');
   const ffmpeg=await find(destination,'ffmpeg.exe');codecs=ffmpeg&&path.dirname(ffmpeg);
   worker=await find(destination,'media-worker.exe');
+  agent=await find(destination,'media-compression-agent.exe');
 }else{
   const files=await readdir(path.join(bundle,'dmg'));
   const installer=files.find(n=>n.endsWith('.dmg'));if(!installer)throw Error('DMG missing');
@@ -57,8 +58,9 @@ if(windows){
   const app=path.join(destination,'Media Compression.app/Contents');
   application=path.join(app,'MacOS/media-compression');
   codecs=path.join(app,'Resources/resources/codecs');worker=path.join(app,'MacOS/media-worker');
+  agent=path.join(app,'MacOS/media-compression-agent');
 }
-if(!application||!codecs||!worker)throw Error('Installed application/codec/worker missing');
+if(!application||!codecs||!worker||!agent)throw Error('Installed application/codec/worker/agent missing');
 evidence.checks.push('Installer copied/installed application and bundled helpers');
 const ext=windows?'.exe':'';
 for(const name of ['ffmpeg','ffprobe','pngquant','cwebp','cjpeg']){
@@ -67,6 +69,11 @@ for(const name of ['ffmpeg','ffprobe','pngquant','cwebp','cjpeg']){
 evidence.checks.push('All five installed codec hashes match staged helpers');
 run('cargo',['test','--locked','-p','media-engine','--test','integration','actual_','--','--include-ignored'],{...process.env,MEDIA_CODEC_DIR:codecs,MEDIA_WORKER_PATH:worker});
 evidence.checks.push('Installed helpers passed image/audio studies, diagnostics, safe export and playback PCM preparation');
+run('cargo',['test','--locked','-p','media-agent','--test','interfaces','--','--include-ignored'],{...process.env,MEDIA_AGENT_PATH:agent});
+evidence.checks.push('Installed agent passed MCP discovery/studies/preview/cancel/export and CLI saved-study verification/collision/source-change checks without system codecs');
+const skill=await find(destination,'SKILL.md');
+if(!skill||!(await readFile(skill,'utf8')).includes('name: media-compression'))throw Error('Bundled agent skill missing');
+evidence.checks.push('Agent study skill is included in the installer');
 // CI launch smoke does not imply an interactive comparison or clean-machine test.
 if(process.env.MEDIA_INSTALL_LAUNCH==='1'){
   const child=spawn(application,[],{stdio:'ignore'});

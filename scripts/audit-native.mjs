@@ -7,7 +7,7 @@ const target = process.env.MEDIA_BUILD_TARGET;
 const workerTarget = target || (windows ? 'x86_64-pc-windows-msvc' : process.arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin');
 const root = path.resolve('target', ...(target ? [target] : []), 'release');
 const files = ['ffmpeg','ffprobe','pngquant','cwebp','cjpeg'].map(n => path.resolve('src-tauri/resources/codecs', n + ext));
-files.push(path.join(root,'media-compression'+ext), path.resolve('src-tauri/binaries',`media-worker-${workerTarget}${ext}`));
+files.push(path.join(root,'media-compression'+ext), path.resolve('src-tauri/binaries',`media-worker-${workerTarget}${ext}`),path.resolve('src-tauri/binaries',`media-compression-agent-${workerTarget}${ext}`));
 const evidence = [];
 for (const file of files) {
   const result = spawnSync(windows ? 'objdump' : '/usr/bin/otool', windows ? ['-p',file] : ['-L',file], { encoding:'utf8',maxBuffer:64*1024*1024 });

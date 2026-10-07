@@ -127,6 +127,11 @@ pub fn output_rate(s: &Settings, p: &Properties) -> u32 {
     }
 }
 
+/// Encoder controls shared by the GUI, CLI and MCP tools.
+pub fn capabilities() -> serde_json::Value {
+    serde_json::json!({"schemaVersion":1,"image":{"jpeg":{"lossless":false,"quality":[0,100],"integerQuality":true},"webp":{"lossless":true,"quality":[0,100],"integerQuality":false,"effort":[0,6]},"png":{"lossless":true,"quality":[0,100],"integerQuality":true,"losslessEffort":[0,6],"paletteSpeed":[1,11]}},"audio":{"aac":{"bitrateKbps":[0.001,1152],"maximumDependsOnRateAndChannels":true,"sampleRates":[7350,8000,11025,12000,16000,22050,24000,32000,44100,48000,64000,88200,96000]},"mp3":{"vbrQuality":[0,9.999],"bitratesKbps":[8,16,24,32,40,48,56,64,80,96,112,128,144,160,192,224,256,320],"effort":[0,9]},"opus":{"bitrateKbps":[0.5,512],"maximumKbpsPerChannel":256,"sampleRate":48000,"effort":[0,10]},"flac":{"lossless":true,"integerBitDepths":[16,24],"effort":[0,12]}},"maxWorkers":2,"maxStudySettings":512,"maxImagePixels":50000000,"notice":"Rate, channel and codec combinations are validated; a valid extreme setting may still fail for a particular source."})
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

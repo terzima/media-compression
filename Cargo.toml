@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/engine", "src-tauri"]
+members = ["crates/engine", "crates/agent", "src-tauri"]
 resolver = "2"
 exclude = [".tools/native/pngquant-3.0.3"]
 
