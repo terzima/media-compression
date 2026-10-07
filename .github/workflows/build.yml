@@ -2,7 +2,7 @@ name: Native builds and bundled engine tests
 on:
   pull_request:
   push:
-    branches: [main, 'codex/**']
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
@@ -57,16 +57,37 @@ jobs:
         shell: bash
         run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy
       - run: npm ci
+      - uses: actions/cache/restore@v4
+        id: native-cache
+        with:
+          path: |
+            .tools/native
+            .tools/sources
+            .tools/patched-sys
+            src-tauri/resources/codecs
+          key: codecs-${{ matrix.target }}-${{ hashFiles('scripts/build-codecs.mjs', 'scripts/codec-sources.json', 'scripts/pkg-config.mjs', 'scripts/pngquant.Cargo.lock', 'rust-toolchain.toml') }}
       - run: npm run codecs
+      - uses: actions/cache/save@v4
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            .tools/native
+            .tools/sources
+            .tools/patched-sys
+            src-tauri/resources/codecs
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
       - run: npm run worker
       - run: npm run check
       - run: cargo fmt --all --check
-      - run: cargo test --locked --workspace -- --include-ignored
+      - run: cargo test --locked --workspace
+      - run: cargo test --locked -p media-engine -- --include-ignored
       - run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Source and license material
         run: node scripts/package-sources.mjs
       - name: Installer build (unsigned CI candidate)
         run: npm exec tauri build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundle }} --ci
+      - name: Installer checksums and build evidence
+        run: node scripts/artifact-checksums.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

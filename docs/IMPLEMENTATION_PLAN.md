@@ -18,13 +18,13 @@ Rust manages opaque IDs, queue states, progress/cancellation, verified cache, pr
 
 | Milestone | Status | Acceptance |
 |---|---|---|
-| 1. Reuse/dependency audit | In progress | Provenance, pins/licenses, public/generated fixtures |
-| 2. Packaging proof | Pending | Installed Mac arm64/Intel and Windows GUI finds bundled helpers, compresses image/audio, plays comparisons |
-| 3. Engine/custom settings | Pending | Presets/custom sweeps, validation, cancellation, cache and export integration tests |
-| 4. Everyday GUI | Pending | Files/folders/drop, accessible controls, responsive queue, per-file outcomes |
-| 5. Comparison/report | Pending | Actual output previews, measured color/alpha/timeline checks, JSON reports |
-| 6. Release qualification | Pending | Clean minimum-OS install, offline runtime, upgrade/uninstall, signing checks |
-| 7. Publication | Pending | Qualified GitHub installers, checksums, dependency source/notices and evidence |
+| 1. Reuse/dependency audit | Development audit complete; distribution review gated | Provenance, pins/licenses, public/generated fixtures |
+| 2. Packaging proof | ARM64 development proof; Intel/Windows CI in progress | Installed Mac arm64/Intel and Windows GUI finds bundled helpers, compresses image/audio, plays comparisons |
+| 3. Engine/custom settings | Implemented; native integration checks pass locally | Presets/custom sweeps, validation, cancellation, cache and export integration tests |
+| 4. Everyday GUI | Implemented; GUI tests and ARM64 launch pass | Files/folders/drop, accessible controls, responsive queue, per-file outcomes |
+| 5. Comparison/report | Implemented; generated fixture checks pass | Actual output previews, measured color/alpha/timeline checks, JSON reports |
+| 6. Release qualification | Deferred external infrastructure; remaining device gates open | Clean minimum-OS install, offline runtime, upgrade/uninstall, signing checks |
+| 7. Publication | Gated; development artifacts only | Qualified GitHub installers, checksums, dependency source/notices and evidence |
 
 ## Verification and release gates
 
@@ -37,5 +37,9 @@ External inputs: signing identity/credentials and access to a clean Windows 11 t
 ## Evidence and deviations
 
 - 2026-10-07: clean standalone repository confirmed; authorized implementation starts on `codex/desktop-v1`.
-- Proposed frontend/native pins are being checked against upstream before installation. Any compatibility/security deviation will be documented with evidence.
-- No installation, runtime, signing, or cross-platform success is claimed yet.
+- Upstream pins are resolved in committed lockfiles and SHA-256 source records. Glyph algorithms were reviewed and adapted as standalone code; no private media or app integrations were copied. See PROVENANCE.md and DEPENDENCIES.md.
+- Implemented presets, advanced endpoint controls, custom sweeps, two-worker jobs, immediate queued cancellation, verified cache/deduplication, lazy color-managed previews, native audio comparisons, safe export and schema-versioned reports.
+- Local pinned-toolchain checks: 8 frontend tests, Rust validation/process/color/PCM unit tests, and 6 real bundled-codec integration tests pass. The 1,000-file mixed batch completed in the integration suite (57.44 seconds total suite), with queued cancellation under five seconds and unchanged originals.
+- ARM64 development DMG builds/mounts and an app copied to ~/Applications launches. Native audio device switching/pause/loop/shared-volume checks pass on this Mac. This is not a clean-machine/minimum-OS result.
+- Mac arm64 CI run 37663238913 passed native builds/tests and DMG/source packaging. Newer final-target CI and installed-bundle checks remain in progress; failed runs are not platform acceptance evidence.
+- Owner decision: continue development builds and arrange signing/release infrastructure later. Stable publication remains gated on the platform/runtime/signing/distribution evidence in RELEASE_QUALIFICATION.md.

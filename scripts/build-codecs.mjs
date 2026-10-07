@@ -63,7 +63,7 @@ for(const [name,version,upstream] of [['lcms2-sys','4.0.7','Little-CMS-lcms2.19.
  if(!existsSync(target)){
   let original;for(const folder of await readdir(registry)){const candidate=path.join(registry,folder,`${name}-${version}`);if(existsSync(candidate))original=candidate;}
   if(!original)throw new Error(`Missing locked ${name} binding; fetch pngquant dependencies first`);
-  await cp(original,target,{recursive:true});await rm(path.join(target,'vendor'),{recursive:true,force:true});await cp(path.join(buildDir,upstream),path.join(target,'vendor'),{recursive:true});
+  await cp(original,target,{recursive:true});await rm(path.join(target,'vendor'),{recursive:true,force:true});await cp(path.join(buildDir,upstream),path.join(target,'vendor'),{recursive:true,filter:src=>!['build','target'].includes(path.basename(src))});
  }
 }
 await cp(path.join(root,'scripts/pngquant.Cargo.lock'),path.join(buildDir,'pngquant-3.0.3/Cargo.lock'));
