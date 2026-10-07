@@ -24,7 +24,7 @@ After installing the desktop app, copy and paste this request into your agent. R
 
 ```text
 Set up Media Compression for this agent using the setup instructions at
-https://github.com/terzima/media-compression#setup-instructions-for-agents.
+https://github.com/terzima/media-compression/blob/codex/desktop-v1/README.md#setup-instructions-for-agents.
 Grant access only to [my media folder]. Prefer its local MCP tools; use its
 bundled JSON CLI if MCP is unavailable. Load its compression-study guide,
 verify the connection, and tell me when it is ready. Preserve my originals.
