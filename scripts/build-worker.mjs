@@ -1,0 +1,13 @@
+import { spawnSync } from 'node:child_process';
+import { cp, mkdir } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import path from 'node:path';
+const cargo=path.join(homedir(),'.cargo/bin/cargo'+(process.platform==='win32'?'.exe':''));
+const rustc=path.join(homedir(),'.cargo/bin/rustc'+(process.platform==='win32'?'.exe':''));
+const target=process.env.MEDIA_BUILD_TARGET||spawnSync(rustc,['--print','host-tuple'],{encoding:'utf8'}).stdout.trim();
+if(!target)throw new Error('Rust toolchain missing');
+const result=spawnSync(cargo,['build','--release','--locked','-p','media-engine','--bin','media-worker','--target',target],{stdio:'inherit'});
+if(result.status!==0)process.exit(result.status||1);
+await mkdir('src-tauri/binaries',{recursive:true});
+const ext=target.includes('windows')?'.exe':'';
+await cp(`target/${target}/release/media-worker${ext}`,`src-tauri/binaries/media-worker-${target}${ext}`);
