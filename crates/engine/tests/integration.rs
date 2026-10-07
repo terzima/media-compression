@@ -223,3 +223,81 @@ fn invalid_batch_is_atomic_and_source_changes_block_export() {
         .next()
         .is_none());
 }
+
+#[test]
+#[ignore = "requires bundled helpers; exercises a 1,000-file mixed batch"]
+fn thousand_file_batch_and_queued_cancellation() {
+    let dir = tempfile::tempdir().unwrap();
+    let inputs = dir.path().join("mixed");
+    std::fs::create_dir(&inputs).unwrap();
+    let template = fixture(dir.path());
+    let audio = dir.path().join("short.wav");
+    let mut wav = hound::WavWriter::create(
+        &audio,
+        hound::WavSpec {
+            channels: 1,
+            sample_rate: 48000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        },
+    )
+    .unwrap();
+    for _ in 0..480 {
+        wav.write_sample(0i16).unwrap();
+    }
+    wav.finalize().unwrap();
+    for n in 0..1000 {
+        let (source, ext) = if n % 2 == 0 {
+            (&template, "png")
+        } else {
+            (&audio, "wav")
+        };
+        std::fs::copy(source, inputs.join(format!("fixture-{n}.{ext}"))).unwrap();
+    }
+    let engine = engine(&dir.path().join("workspace"));
+    engine.import(vec![inputs]).unwrap();
+    let data = engine.snapshot();
+    assert_eq!(data.media.len(), 1000);
+    assert!(data.media.iter().all(|m| m.error.is_none()));
+    let items = data
+        .media
+        .iter()
+        .map(|m| {
+            (
+                m.id.clone(),
+                vec![if m.properties.as_ref().unwrap().kind == "image" {
+                    image("png", true, 100.)
+                } else {
+                    Settings {
+                        format: "flac".into(),
+                        lossless: true,
+                        quality: None,
+                        bitrate: None,
+                        vbr_quality: None,
+                        effort: Some(5),
+                        background: None,
+                    }
+                }],
+            )
+        })
+        .collect::<Vec<_>>();
+    engine.start(items.clone()).unwrap();
+    wait(&engine);
+    assert!(engine
+        .snapshot()
+        .jobs
+        .iter()
+        .all(|j| j.state == "ready" && j.errors.is_empty()));
+    assert!(engine
+        .snapshot()
+        .media
+        .iter()
+        .all(|m| m.candidates.len() == 1));
+    // Once all results are cached, a fresh 1,000-item sweep can still cancel queued work immediately.
+    let start = Instant::now();
+    engine.start(items).unwrap();
+    engine.cancel(None);
+    assert!(engine.snapshot().jobs.iter().all(|j| j.state != "queued"));
+    wait(&engine);
+    assert!(start.elapsed() < Duration::from_secs(5));
+}

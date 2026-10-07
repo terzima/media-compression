@@ -51,8 +51,6 @@ jobs:
         run: |
           "C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           "C:\msys64\usr\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          "CC=gcc" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "CXX=g++" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Build tools
         run: python -m pip install cmake==4.4.4 ninja==1.13.2
       - name: Rust toolchain

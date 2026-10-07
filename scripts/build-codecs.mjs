@@ -9,10 +9,11 @@ const root=path.resolve(import.meta.dirname,'..');
 const sourceDir=path.join(root,'.tools/sources'), buildDir=path.join(root,'.tools/native');
 const prefix=path.join(buildDir,'prefix'), dest=path.join(root,'src-tauri/resources/codecs');
 const windows=process.platform==='win32', ext=windows?'.exe':'';
-const env={...process.env,PATH:[path.join(prefix,'bin'),path.join(root,'.tools/build-env',windows?'Scripts':'bin'),path.join(os.homedir(),'.cargo/bin'),process.env.PATH].join(path.delimiter),PKG_CONFIG_PATH:path.join(prefix,'lib/pkgconfig'),MEDIA_CODEC_PREFIX:prefix,CFLAGS:windows?'-O2':'-O2 -mmacosx-version-min=14.0',CXXFLAGS:windows?'-O2':'-O2 -mmacosx-version-min=14.0',LDFLAGS:windows?'-static -static-libgcc':'-mmacosx-version-min=14.0',MACOSX_DEPLOYMENT_TARGET:'14.0'};
+const env={...process.env,...(windows?{CC:'gcc',CXX:'g++'}:{}),PATH:[path.join(prefix,'bin'),path.join(root,'.tools/build-env',windows?'Scripts':'bin'),path.join(os.homedir(),'.cargo/bin'),process.env.PATH].join(path.delimiter),PKG_CONFIG_PATH:path.join(prefix,'lib/pkgconfig'),MEDIA_CODEC_PREFIX:prefix,CFLAGS:windows?'-O2':'-O2 -mmacosx-version-min=14.0',CXXFLAGS:windows?'-O2':'-O2 -mmacosx-version-min=14.0',LDFLAGS:windows?'-static -static-libgcc':'-mmacosx-version-min=14.0',MACOSX_DEPLOYMENT_TARGET:'14.0'};
 function run(command,args,cwd=root) {
   console.log(`${command} ${args.join(' ')}`);
-  const result=spawnSync(command,windows?args.map(a=>a.replaceAll('\\','/')):args,{cwd,env,stdio:'inherit'});
+  const executable=windows&&command==='tar'?path.join(process.env.SystemRoot||'C:/Windows','System32/tar.exe'):command;
+  const result=spawnSync(executable,windows?args.map(a=>a.replaceAll('\\','/')):args,{cwd,env,stdio:'inherit'});
   if(result.error)throw result.error;
   if(result.status!==0)throw new Error(`${command} failed (${result.status})`);
 }
@@ -64,6 +65,7 @@ for(const [name,version,upstream] of [['lcms2-sys','4.0.7','Little-CMS-lcms2.19.
   await cp(original,target,{recursive:true});await rm(path.join(target,'vendor'),{recursive:true,force:true});await cp(path.join(buildDir,upstream),path.join(target,'vendor'),{recursive:true});
  }
 }
+await cp(path.join(root,'scripts/pngquant.Cargo.lock'),path.join(buildDir,'pngquant-3.0.3/Cargo.lock'));
 const patchArgs=['--config',`patch.crates-io.lcms2-sys.path="${path.join(patches,'lcms2-sys').replaceAll('\\','/')}"`,'--config',`patch.crates-io.libpng-sys.path="${path.join(patches,'libpng-sys').replaceAll('\\','/')}"`];
 if(!existsSync(path.join(buildDir,'pngquant-3.0.3/target/release/pngquant'+ext))){
  const imagequant=sources.find(s=>s.name.startsWith('libimagequant-'));
@@ -97,4 +99,5 @@ for(const source of sources){
  const dir=path.join(buildDir,source.name.replace(/\.tar\.(gz|xz)$/,''));
  for(const file of await readdir(dir))if(/^(COPYING|COPYRIGHT|LICENSE|PATENTS|README\.ijg)/.test(file))await cp(path.join(dir,file),path.join(notices,path.basename(dir)+'-'+file),{recursive:true});
 }
+await cp(path.join(root,'LICENSE'),path.join(dest,'PROJECT_LICENSE.txt'));
 console.log('Bundled helpers built and individually launched. Installer verification remains separate.');

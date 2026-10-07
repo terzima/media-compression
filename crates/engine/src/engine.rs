@@ -348,6 +348,13 @@ impl Engine {
         self.changed();
     }
     fn run_job(&self, id: &str, media: &Media, options: Vec<Settings>, cancel: &AtomicBool) {
+        if cancel.load(Ordering::Relaxed) {
+            self.update_job(id, |j| {
+                j.state = "canceled".into();
+                j.stage = "Canceled before encoding".into();
+            });
+            return;
+        }
         self.update_job(id, |j| {
             j.state = "processing".into();
             j.stage = "Preparing".into();
@@ -709,6 +716,12 @@ impl Engine {
         for (key, flag) in self.cancels.lock().unwrap().iter() {
             if id.is_none_or(|v| v == key) {
                 flag.store(true, Ordering::Relaxed);
+            }
+        }
+        for job in &mut self.data.lock().unwrap().jobs {
+            if job.state == "queued" && id.is_none_or(|v| v == job.id) {
+                job.state = "canceled".into();
+                job.stage = "Canceled before encoding".into();
             }
         }
         self.changed();

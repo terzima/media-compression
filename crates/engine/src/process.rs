@@ -48,12 +48,13 @@ pub fn run(
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x08000000);
     }
-    let mut child = command.spawn().with_context(|| {
+    let child = command.spawn().with_context(|| {
         format!(
             "Could not start bundled helper {}",
             program.file_name().unwrap_or_default().to_string_lossy()
         )
     })?;
+    let mut child = ChildGuard(child);
     #[cfg(windows)]
     let _job = WindowsJob::attach(&child)?;
     if let Some(bytes) = stdin {
@@ -94,6 +95,31 @@ pub fn run(
         bail!("Helper failed ({status}): {}", error.trim());
     }
     Ok(output)
+}
+
+struct ChildGuard(std::process::Child);
+impl std::ops::Deref for ChildGuard {
+    type Target = std::process::Child;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl std::ops::DerefMut for ChildGuard {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        if self.0.try_wait().ok().flatten().is_none() {
+            #[cfg(unix)]
+            unsafe {
+                libc::kill(-(self.0.id() as i32), libc::SIGKILL);
+            }
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
 }
 
 #[cfg(windows)]

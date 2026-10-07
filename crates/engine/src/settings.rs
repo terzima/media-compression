@@ -24,7 +24,7 @@ pub fn validate(s: &Settings, p: &Properties) -> Result<()> {
             let q = s
                 .quality
                 .ok_or_else(|| anyhow::anyhow!("Choose image quality"))?;
-            let min = if s.format == "jpeg" { 1.0 } else { 0.0 };
+            let min = 0.0;
             if !q.is_finite() || q < min || q > 100.0 || (s.format != "webp" && q.fract() != 0.0) {
                 bail!("Quality must be {min}–100 (JPEG and PNG require integers)");
             }

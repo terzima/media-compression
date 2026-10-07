@@ -347,24 +347,31 @@ pub fn execute(request: ImageRequest) -> Result<ImageResult> {
         sum += error as u64;
     }
     let (light, dark) = if identical {
-        (1., 1.)
+        (Some(1.), Some(1.))
+    } else if reference.width() < 8 || reference.height() < 8 {
+        notices.push("SSIM unavailable for images smaller than 8 pixels on either axis; candidate remains exportable".into());
+        (None, None)
     } else {
-        (
+        let measure = |background, label| {
             ssim(
                 &request.tools.ffmpeg,
-                &composite(&reference, [255; 3]),
-                &composite(&candidate, [255; 3]),
+                &composite(&reference, background),
+                &composite(&candidate, background),
                 temp.path(),
-                "light",
-            )?,
-            ssim(
-                &request.tools.ffmpeg,
-                &composite(&reference, [18, 22, 30]),
-                &composite(&candidate, [18, 22, 30]),
-                temp.path(),
-                "dark",
-            )?,
-        )
+                label,
+            )
+        };
+        match (measure([255; 3], "light"), measure([18, 22, 30], "dark")) {
+            (Ok(a), Ok(b)) => (Some(a), Some(b)),
+            (a, b) => {
+                notices.push(format!(
+                    "SSIM unavailable: {:?}; {:?}; candidate remains exportable",
+                    a.err(),
+                    b.err()
+                ));
+                (None, None)
+            }
+        }
     };
     notices.push(
         "Orientation applied; private image metadata removed; output uses sRGB interpretation"
@@ -373,8 +380,8 @@ pub fn execute(request: ImageRequest) -> Result<ImageResult> {
     Ok(ImageResult {
         properties: after_props,
         diagnostics: Diagnostics {
-            ssim_light: Some(light),
-            ssim_dark: Some(dark),
+            ssim_light: light,
+            ssim_dark: dark,
             alpha_max_error: Some(max),
             alpha_mean_error: Some(
                 sum as f64 / (reference.width() as f64 * reference.height() as f64),
