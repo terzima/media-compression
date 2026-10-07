@@ -51,6 +51,8 @@ jobs:
         run: |
           "C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           "C:\msys64\usr\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "CARGO_PROFILE_DEV_DEBUG=0" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CARGO_PROFILE_TEST_DEBUG=0" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Build tools
         run: python -m pip install cmake==4.4.4 ninja==1.13.2
       - name: Rust toolchain
@@ -58,6 +60,7 @@ jobs:
         run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy
       - uses: actions/cache/restore@v4
         id: rust-cache
+        if: runner.os != 'Windows'
         with:
           path: |
             ~/.cargo/registry
@@ -104,7 +107,7 @@ jobs:
       - name: Installer build (unsigned CI candidate)
         run: npm exec tauri build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundle }} --ci
       - uses: actions/cache/save@v4
-        if: steps.rust-cache.outputs.cache-hit != 'true'
+        if: runner.os != 'Windows' && steps.rust-cache.outputs.cache-hit != 'true'
         with:
           path: |
             ~/.cargo/registry
