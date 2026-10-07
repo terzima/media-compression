@@ -24,6 +24,15 @@ if(windows){
   const command=`$p=Start-Process -FilePath $env:MEDIA_INSTALLER -ArgumentList @('/S',('/D='+$env:MEDIA_INSTALL_DEST)) -Wait -PassThru; exit $p.ExitCode`;
   run('powershell.exe',['-NoProfile','-NonInteractive','-Command',command],{...process.env,MEDIA_INSTALLER:installerPath,MEDIA_INSTALL_DEST:destination});
   evidence.installer={filename:installer,sha256:await hash(installerPath)};
+  const template=await readFile(path.resolve('target',...(target?[target]:[]),'release/nsis/x64/installer.nsi'),'utf8');
+  const runtime=template.match(/!define WEBVIEW2INSTALLERPATH "([^"\r\n]+)"/)?.[1]?.replaceAll('$$','$');
+  if(!runtime)throw Error('Offline WebView2 installer was not embedded');
+  const inspect=spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',
+    '$v=(Get-Item $env:MEDIA_WEBVIEW_INSTALLER).VersionInfo; $s=Get-AuthenticodeSignature $env:MEDIA_WEBVIEW_INSTALLER; @{fileVersion=$v.FileVersion; productVersion=$v.ProductVersion; signatureStatus=[string]$s.Status; signer=$s.SignerCertificate.Subject} | ConvertTo-Json -Compress'],
+    {env:{...process.env,MEDIA_WEBVIEW_INSTALLER:runtime},encoding:'utf8'});
+  if(inspect.status!==0)throw Error('WebView2 provenance inspection failed');
+  evidence.webview2={filename:path.basename(runtime),sha256:await hash(runtime),...JSON.parse(inspect.stdout)};
+  if(evidence.webview2.signatureStatus!=='Valid'||!evidence.webview2.signer?.includes('Microsoft Corporation'))throw Error('Offline WebView2 installer signature could not be verified');
   application=await find(destination,'media-compression.exe')||await find(destination,'Media Compression.exe');
   const ffmpeg=await find(destination,'ffmpeg.exe');codecs=ffmpeg&&path.dirname(ffmpeg);
   worker=await find(destination,'media-worker.exe');
