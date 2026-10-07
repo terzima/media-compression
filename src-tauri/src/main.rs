@@ -98,6 +98,7 @@ async fn export_candidates(
 }
 #[tauri::command]
 fn clear_cache(state: State<AppState>) -> Result<bool, String> {
+    state.play_request.fetch_add(1, Ordering::SeqCst);
     state.playback.control("stop", None, None)?;
     engine(&state)?
         .clear()
