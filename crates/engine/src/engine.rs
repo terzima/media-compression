@@ -166,6 +166,31 @@ impl Engine {
         (self.notify)();
     }
     pub fn import(&self, paths: Vec<PathBuf>) -> Result<()> {
+        self.import_with_roots(paths, None)
+    }
+    /// Agent imports check each discovered file before hashing or probing it.
+    pub fn import_scoped(&self, paths: Vec<PathBuf>, roots: &[PathBuf]) -> Result<()> {
+        self.import_with_roots(paths, Some(roots))
+    }
+    /// Restore a saved folder-relative export name for an already verified import.
+    pub fn restore_import_name(&self, id: &str, relative_name: &str) -> Result<()> {
+        if relative_name.is_empty()
+            || !Path::new(relative_name)
+                .components()
+                .all(|c| matches!(c, Component::Normal(_)))
+        {
+            bail!("Unsafe saved export name");
+        }
+        let mut data = self.data.lock().unwrap();
+        let media = data
+            .media
+            .iter_mut()
+            .find(|m| m.id == id)
+            .context("Unknown media ID")?;
+        media.relative_name = relative_name.into();
+        Ok(())
+    }
+    fn import_with_roots(&self, paths: Vec<PathBuf>, roots: Option<&[PathBuf]>) -> Result<()> {
         let _operation = self.operations.lock().unwrap();
         let mut files = Vec::new();
         let mut seen = HashSet::new();
@@ -221,6 +246,11 @@ impl Engine {
                         );
                     }
                     item.path = path.canonicalize()?;
+                    if roots
+                        .is_some_and(|roots| !roots.iter().any(|root| item.path.starts_with(root)))
+                    {
+                        bail!("File is outside the granted folders");
+                    }
                     if !seen.insert(item.path.clone()) {
                         bail!("Duplicate import in this selection");
                     }
