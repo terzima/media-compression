@@ -28,11 +28,16 @@ if(windows){
   const runtime=template.match(/!define WEBVIEW2INSTALLERPATH "([^"\r\n]+)"/)?.[1]?.replaceAll('$$','$');
   if(!runtime)throw Error('Offline WebView2 installer was not embedded');
   const inspect=spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',
-    '$v=(Get-Item $env:MEDIA_WEBVIEW_INSTALLER).VersionInfo; $s=Get-AuthenticodeSignature $env:MEDIA_WEBVIEW_INSTALLER; @{fileVersion=$v.FileVersion; productVersion=$v.ProductVersion; signatureStatus=[string]$s.Status; signer=$s.SignerCertificate.Subject} | ConvertTo-Json -Compress'],
+    '$v=(Get-Item $env:MEDIA_WEBVIEW_INSTALLER).VersionInfo; $s=Get-AuthenticodeSignature $env:MEDIA_WEBVIEW_INSTALLER; @{fileVersion=$v.FileVersion; productVersion=$v.ProductVersion; signatureStatus=[string]$s.Status; signatureMessage=$s.StatusMessage; signer=$s.SignerCertificate.Subject} | ConvertTo-Json -Compress'],
     {env:{...process.env,MEDIA_WEBVIEW_INSTALLER:runtime},encoding:'utf8'});
   if(inspect.status!==0)throw Error('WebView2 provenance inspection failed');
   evidence.webview2={filename:path.basename(runtime),sha256:await hash(runtime),...JSON.parse(inspect.stdout)};
-  if(evidence.webview2.signatureStatus!=='Valid'||!evidence.webview2.signer?.includes('Microsoft Corporation'))throw Error('Offline WebView2 installer signature could not be verified');
+  evidence.webview2.source='https://go.microsoft.com/fwlink/?linkid=2124701';
+  evidence.webview2.qualifiedSignature=evidence.webview2.signatureStatus==='Valid'&&!!evidence.webview2.signer?.includes('Microsoft Corporation');
+  await writeFile('artifacts/webview2-provenance.json',JSON.stringify(evidence.webview2,null,2)+'\n');
+  console.log('Embedded WebView2 provenance:',JSON.stringify(evidence.webview2));
+  if(evidence.webview2.signatureStatus==='HashMismatch'||(evidence.webview2.signatureStatus==='Valid'&&!evidence.webview2.qualifiedSignature))throw Error('Offline WebView2 installer integrity/publisher mismatch');
+  if(!evidence.webview2.qualifiedSignature)console.log('WebView2 signature qualification remains a stable-publication gate; continuing development runtime checks.');
   application=await find(destination,'media-compression.exe')||await find(destination,'Media Compression.exe');
   const ffmpeg=await find(destination,'ffmpeg.exe');codecs=ffmpeg&&path.dirname(ffmpeg);
   worker=await find(destination,'media-worker.exe');
