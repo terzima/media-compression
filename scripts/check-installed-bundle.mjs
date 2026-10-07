@@ -24,7 +24,7 @@ if(windows){
   const command=`$p=Start-Process -FilePath $env:MEDIA_INSTALLER -ArgumentList @('/S',('/D='+$env:MEDIA_INSTALL_DEST)) -Wait -PassThru; exit $p.ExitCode`;
   run('powershell.exe',['-NoProfile','-NonInteractive','-Command',command],{...process.env,MEDIA_INSTALLER:installerPath,MEDIA_INSTALL_DEST:destination});
   evidence.installer={filename:installer,sha256:await hash(installerPath)};
-  application=await find(destination,'Media Compression.exe');
+  application=await find(destination,'media-compression.exe')||await find(destination,'Media Compression.exe');
   const ffmpeg=await find(destination,'ffmpeg.exe');codecs=ffmpeg&&path.dirname(ffmpeg);
   worker=await find(destination,'media-worker.exe');
 }else{
