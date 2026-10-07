@@ -1,7 +1,7 @@
 export interface Settings { format:string; lossless:boolean; quality:number|null; bitrate:number|null; vbrQuality:number|null; effort:number|null; background:string|null }
-export interface Properties {kind:'image'|'audio';format:string;width:number|null;height:number|null;alpha:boolean;bitDepth:number|null;sampleRate:number|null;channels:number|null;duration:number|null;sampleFormat:string|null}
+export interface Properties {kind:'image'|'audio';format:string;width:number|null;height:number|null;alpha:boolean;bitDepth:number|null;sampleRate:number|null;channels:number|null;duration:number|null;sampleFormat:string|null;colorProfile?:string|null;channelLayout?:string|null}
 export interface Diagnostics {ssimLight:number|null;ssimDark:number|null;alphaMaxError:number|null;alphaMeanError:number|null;pixelIdentical:boolean|null;durationDelta:number|null;notices:string[]}
-export interface Candidate {id:string;mediaId:string;bytes:number;sha256:string;settings:Settings[];properties:Properties;diagnostics:Diagnostics;preview:string|null;exported:string[]}
+export interface Candidate {id:string;mediaId:string;bytes:number;sha256:string;settings:Settings[];properties:Properties;diagnostics:Diagnostics;preview:string|null;exported:string[];exportErrors?:string[]}
 export interface Media {id:string;name:string;relativeName:string;bytes:number;sha256:string;properties:Properties|null;preview:string|null;error:string|null;candidates:Candidate[]}
 export interface Job {id:string;mediaId:string;state:string;stage:string;completed:number;total:number;errors:string[]}
 export interface Snapshot {media:Media[];jobs:Job[];tools:string[]}

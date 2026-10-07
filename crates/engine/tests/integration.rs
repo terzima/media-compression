@@ -226,6 +226,51 @@ fn invalid_batch_is_atomic_and_source_changes_block_export() {
         .unwrap()
         .next()
         .is_none());
+    // One failed file must not prevent independent exports or retrying a repaired input.
+    let good = dir.path().join("unaffected.png");
+    image::RgbaImage::from_pixel(16, 16, image::Rgba([70, 80, 90, 255]))
+        .save(&good)
+        .unwrap();
+    engine.import(vec![good.clone()]).unwrap();
+    let good_id = engine.snapshot().media.last().unwrap().id.clone();
+    engine
+        .start(vec![(good_id, vec![image("png", true, 100.)])])
+        .unwrap();
+    wait(&engine);
+    let data = engine.snapshot();
+    let ids = data
+        .media
+        .iter()
+        .flat_map(|m| &m.candidates)
+        .map(|c| c.id.clone())
+        .collect::<Vec<_>>();
+    assert!(engine
+        .export(&ids, &dir.path().join("partial"), true)
+        .is_err());
+    assert!(dir
+        .path()
+        .join("partial/unaffected-compressed.png")
+        .exists());
+    assert!(!engine.snapshot().media[0].candidates[0]
+        .export_errors
+        .is_empty());
+    engine.import(vec![original.clone()]).unwrap();
+    assert!(engine.snapshot().media.last().unwrap().error.is_some());
+    image::RgbaImage::from_pixel(16, 16, image::Rgba([120, 80, 90, 255]))
+        .save(&original)
+        .unwrap();
+    engine.import(vec![original.clone()]).unwrap();
+    assert!(engine.snapshot().media.last().unwrap().error.is_none());
+    engine.import(vec![original]).unwrap();
+    assert!(engine
+        .snapshot()
+        .media
+        .last()
+        .unwrap()
+        .error
+        .as_deref()
+        .unwrap()
+        .contains("already imported"));
 }
 
 #[test]

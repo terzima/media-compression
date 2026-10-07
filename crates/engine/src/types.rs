@@ -51,6 +51,8 @@ pub struct Candidate {
     pub diagnostics: Diagnostics,
     pub preview: Option<String>,
     pub exported: Vec<String>,
+    #[serde(default)]
+    pub export_errors: Vec<String>,
     #[serde(skip)]
     pub path: PathBuf,
 }

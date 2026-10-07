@@ -167,48 +167,46 @@ impl Engine {
                 candidates: Vec::new(),
                 path: path.clone(),
             };
-            let result = (|| -> Result<()> {
-                if fs::symlink_metadata(&path)?.file_type().is_symlink() {
-                    bail!("Symbolic links are skipped to prevent cycles or accidental traversal");
-                }
-                item.path = path.canonicalize()?;
-                if !seen.insert(item.path.clone()) {
-                    bail!("Duplicate import in this selection");
-                }
-                if self
-                    .data
-                    .lock()
-                    .unwrap()
-                    .media
-                    .iter()
-                    .any(|m| m.path == item.path)
-                {
-                    bail!("This file is already imported");
-                }
-                item.bytes = fs::metadata(&item.path)?.len();
-                if item.bytes == 0 {
-                    bail!("Empty file");
-                }
-                item.sha256 = hash_file(&item.path)?;
-                let probe = probe_audio(&self.tools, &item.path, &AtomicBool::new(false))?;
-                if probe.kind == "image" {
-                    let preview = self.root.join("work").join(format!("{id}-source.png"));
-                    let result = self.image_request(
-                        "inspect",
-                        &item.path,
-                        &preview,
-                        None,
-                        &AtomicBool::new(false),
-                    )?;
-                    item.properties = Some(result.properties);
-                } else {
-                    item.properties = Some(probe);
-                }
-                if hash_file(&item.path)? != item.sha256 {
-                    bail!("Source changed during import; add it again");
-                }
-                Ok(())
-            })();
+            let result =
+                (|| -> Result<()> {
+                    if fs::symlink_metadata(&path)?.file_type().is_symlink() {
+                        bail!(
+                            "Symbolic links are skipped to prevent cycles or accidental traversal"
+                        );
+                    }
+                    item.path = path.canonicalize()?;
+                    if !seen.insert(item.path.clone()) {
+                        bail!("Duplicate import in this selection");
+                    }
+                    item.bytes = fs::metadata(&item.path)?.len();
+                    if item.bytes == 0 {
+                        bail!("Empty file");
+                    }
+                    item.sha256 = hash_file(&item.path)?;
+                    if self.data.lock().unwrap().media.iter().any(|m| {
+                        m.path == item.path && m.sha256 == item.sha256 && m.error.is_none()
+                    }) {
+                        bail!("This unchanged file is already imported");
+                    }
+                    let probe = probe_audio(&self.tools, &item.path, &AtomicBool::new(false))?;
+                    if probe.kind == "image" {
+                        let preview = self.root.join("work").join(format!("{id}-source.png"));
+                        let result = self.image_request(
+                            "inspect",
+                            &item.path,
+                            &preview,
+                            None,
+                            &AtomicBool::new(false),
+                        )?;
+                        item.properties = Some(result.properties);
+                    } else {
+                        item.properties = Some(probe);
+                    }
+                    if hash_file(&item.path)? != item.sha256 {
+                        bail!("Source changed during import; add it again");
+                    }
+                    Ok(())
+                })();
             if let Err(e) = result {
                 item.error = Some(format!("{e:#}"));
             }
@@ -494,6 +492,7 @@ impl Engine {
                 diagnostics: result.diagnostics,
                 preview: None,
                 exported: Vec::new(),
+                export_errors: Vec::new(),
                 path: output.clone(),
             };
             // Same-filesystem staging; cache keys never overwrite an unverified candidate.
@@ -519,6 +518,7 @@ impl Engine {
         candidate.id = Uuid::new_v4().to_string();
         candidate.path = output.clone();
         candidate.exported.clear();
+        candidate.export_errors.clear();
         Ok(candidate)
     }
     fn encode_audio(
@@ -748,61 +748,65 @@ impl Engine {
         let destination = destination.canonicalize()?;
         let snapshot = self.snapshot();
         let mut results = Vec::new();
+        let mut failures = Vec::new();
         for media in &snapshot.media {
             for candidate in &media.candidates {
                 if !ids.contains(&candidate.id) {
                     continue;
                 }
-                if hash_file(&media.path)? != media.sha256 {
-                    bail!("{} changed; import again before export", media.name);
-                }
-                if hash_file(&candidate.path)? != candidate.sha256 {
-                    bail!("Candidate integrity check failed");
-                }
-                let relative = Path::new(&media.relative_name);
-                if relative
-                    .components()
-                    .any(|c| !matches!(c, Component::Normal(_)))
-                {
-                    bail!("Unsafe export path");
-                }
-                let parent = safe_parent(&destination, relative.parent().unwrap_or(Path::new("")))?;
-                if fs2::available_space(&parent)? < candidate.bytes {
-                    bail!("Not enough export disk space");
-                }
-                let stem = relative.file_stem().unwrap_or_default().to_string_lossy();
-                let extension = extension(&candidate.settings[0].format);
-                let mut stage = tempfile::NamedTempFile::new_in(&parent)?;
-                std::io::copy(&mut File::open(&candidate.path)?, &mut stage)?;
-                stage.as_file().sync_all()?;
-                if hash_file(stage.path())? != candidate.sha256 {
-                    bail!("Candidate changed during export; staged output discarded");
-                }
-                if hash_file(&media.path)? != media.sha256 {
-                    bail!("Source changed during export; staged output discarded");
-                }
-                let mut index = 1;
-                let exported = loop {
-                    let name = if index == 1 {
-                        format!("{stem}-compressed.{extension}")
-                    } else {
-                        format!("{stem}-compressed-{index}.{extension}")
-                    };
-                    let target = parent.join(name);
-                    match stage.persist_noclobber(&target) {
-                        Ok(_) => break target,
-                        Err(e) if e.error.kind() == std::io::ErrorKind::AlreadyExists => {
-                            stage = e.file;
-                            index += 1;
-                        }
-                        Err(e) => return Err(e.error.into()),
+                let result = (|| -> Result<String> {
+                    if hash_file(&media.path)? != media.sha256 {
+                        bail!("{} changed; import again before export", media.name);
                     }
-                };
-                let relative_output = exported
-                    .strip_prefix(&destination)?
-                    .to_string_lossy()
-                    .into_owned();
-                results.push(relative_output.clone());
+                    if hash_file(&candidate.path)? != candidate.sha256 {
+                        bail!("Candidate integrity check failed");
+                    }
+                    let relative = Path::new(&media.relative_name);
+                    if relative
+                        .components()
+                        .any(|c| !matches!(c, Component::Normal(_)))
+                    {
+                        bail!("Unsafe export path");
+                    }
+                    let parent =
+                        safe_parent(&destination, relative.parent().unwrap_or(Path::new("")))?;
+                    if fs2::available_space(&parent)? < candidate.bytes {
+                        bail!("Not enough export disk space");
+                    }
+                    let stem = relative.file_stem().unwrap_or_default().to_string_lossy();
+                    let extension = extension(&candidate.settings[0].format);
+                    let mut stage = tempfile::NamedTempFile::new_in(&parent)?;
+                    std::io::copy(&mut File::open(&candidate.path)?, &mut stage)?;
+                    stage.as_file().sync_all()?;
+                    if hash_file(stage.path())? != candidate.sha256 {
+                        bail!("Candidate changed during export; staged output discarded");
+                    }
+                    if hash_file(&media.path)? != media.sha256 {
+                        bail!("Source changed during export; staged output discarded");
+                    }
+                    let mut index = 1;
+                    let exported = loop {
+                        let name = if index == 1 {
+                            format!("{stem}-compressed.{extension}")
+                        } else {
+                            format!("{stem}-compressed-{index}.{extension}")
+                        };
+                        let target = parent.join(name);
+                        match stage.persist_noclobber(&target) {
+                            Ok(_) => break target,
+                            Err(e) if e.error.kind() == std::io::ErrorKind::AlreadyExists => {
+                                stage = e.file;
+                                index += 1;
+                            }
+                            Err(e) => return Err(e.error.into()),
+                        }
+                    };
+                    let relative_output = exported
+                        .strip_prefix(&destination)?
+                        .to_string_lossy()
+                        .into_owned();
+                    Ok(relative_output)
+                })();
                 if let Some(c) = self
                     .data
                     .lock()
@@ -812,7 +816,17 @@ impl Engine {
                     .flat_map(|m| m.candidates.iter_mut())
                     .find(|c| c.id == candidate.id)
                 {
-                    c.exported.push(relative_output);
+                    match result {
+                        Ok(relative_output) => {
+                            results.push(relative_output.clone());
+                            c.exported.push(relative_output);
+                        }
+                        Err(e) => {
+                            let error = format!("{}: {e:#}", media.name);
+                            c.export_errors.push(error.clone());
+                            failures.push(error);
+                        }
+                    }
                 }
                 self.changed();
             }
@@ -851,6 +865,14 @@ impl Engine {
             stage.persist_noclobber(target)?;
         }
         self.changed();
+        if !failures.is_empty() {
+            bail!(
+                "Exported {} files; {} failed. {}",
+                results.len(),
+                failures.len(),
+                failures.join("; ")
+            );
+        }
         Ok(results)
     }
     pub fn preview(&self, id: &str) -> Result<String> {

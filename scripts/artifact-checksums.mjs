@@ -16,7 +16,10 @@ async function walk(folder) {
     });
   }
 }
-await walk(dir);
+for (const folder of ['dmg','nsis']) {
+  try { await readdir(path.join(dir, folder)); } catch (e) { if (e.code === 'ENOENT') continue; throw e; }
+  await walk(path.join(dir, folder));
+}
 if (!artifacts.length) throw Error('No installer found; no checksums produced');
 await mkdir('artifacts', { recursive: true });
 await writeFile('artifacts/installer-checksums.sha256', artifacts.map(a => `${a.sha256}  ${a.filename}`).join('\n') + '\n');

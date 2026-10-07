@@ -17,8 +17,8 @@ export default function App(){
  const command=async<T,>(name:string,args?:Record<string,unknown>):Promise<T|undefined>=>{try{setError('');return await invoke<T>(name,args);}catch(e){setError(String(e));return undefined;}};
  useEffect(()=>{localStorage.setItem('media-compression-settings-v1',JSON.stringify(form));},[form]);
  useEffect(()=>{
-  if(!desktop)return;void refresh();let timer:ReturnType<typeof setTimeout>;let off:(()=>void)|undefined,drop:(()=>void)|undefined;
-  void listen('engine-changed',()=>{clearTimeout(timer);timer=setTimeout(()=>void refresh(),80);}).then(v=>off=v);
+  if(!desktop)return;void refresh();let timer:ReturnType<typeof setTimeout>|undefined;let off:(()=>void)|undefined,drop:(()=>void)|undefined;
+  void listen('engine-changed',()=>{if(timer!==undefined)return;timer=setTimeout(()=>{timer=undefined;void refresh();},80);}).then(v=>off=v);
   void getCurrentWebview().onDragDropEvent(e=>{setDrag(e.payload.type==='over'||e.payload.type==='enter');if(e.payload.type==='drop'){setImporting(true);void command('add_paths',{paths:e.payload.paths}).then(()=>refresh()).finally(()=>setImporting(false));}}).then(v=>drop=v);
   const poll=setInterval(()=>void invoke<Playback>('playback_info').then(setPlay).catch(()=>{}),250);
   return()=>{off?.();drop?.();clearTimeout(timer);clearInterval(poll);};
@@ -97,5 +97,5 @@ export default function App(){
 }
 function CandidateCard({media,candidate:c,active,selected,onCompare,onSelect}:{media:Media;candidate:Candidate;active:boolean;selected:boolean;onCompare:()=>void;onSelect:()=>void}){
  const saved=savings(media.bytes,c.bytes);
- return <article className={`candidate ${active?'active':''}`}><label className="candidate-checkbox"><input type="checkbox" aria-label={`Export ${label(c.settings[0])}`} checked={selected} onChange={onSelect}/></label><button className="candidate-body" onClick={onCompare}><div><strong>{label(c.settings[0])}</strong><small>{c.settings.length>1?`${c.settings.length} settings produced identical bytes`:'Verified output'}</small></div><div className="candidate-size"><strong>{bytes(c.bytes)}</strong><small className={saved>0?'saved':'larger'}>{saved>0?`${saved.toFixed(1)}% smaller`:'No size saving'}</small></div></button><details className="settings-detail"><summary>Settings</summary><pre>{JSON.stringify(c.settings,null,2)}</pre></details>{c.exported.length>0&&<span className="exported-label">Exported</span>}</article>;
+ return <article className={`candidate ${active?'active':''}`}><label className="candidate-checkbox"><input type="checkbox" aria-label={`Export ${label(c.settings[0])}`} checked={selected} onChange={onSelect}/></label><button className="candidate-body" onClick={onCompare}><div><strong>{label(c.settings[0])}</strong><small>{c.settings.length>1?`${c.settings.length} settings produced identical bytes`:'Verified output'}</small></div><div className="candidate-size"><strong>{bytes(c.bytes)}</strong><small className={saved>0?'saved':'larger'}>{saved>0?`${saved.toFixed(1)}% smaller`:'No size saving'}</small></div></button><details className="settings-detail"><summary>Settings</summary><pre>{JSON.stringify(c.settings,null,2)}</pre></details>{c.exported.length>0&&<span className="exported-label">Exported</span>}{c.exportErrors?.map((e,i)=><p className="error-text" key={i}>{e}</p>)}</article>;
 }
