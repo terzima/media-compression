@@ -87,9 +87,12 @@ fn actual_image_study_preserves_source_deduplicates_and_exports_without_overwrit
     let dir = tempfile::tempdir().unwrap();
     let original = fixture(dir.path());
     let hash = hash_file(&original).unwrap();
-    let engine = engine(&dir.path().join("workspace"));
+    let engine = engine(&dir.path().join("workspace 日本 🐈"));
     engine.import(vec![original.clone()]).unwrap();
     let id = engine.snapshot().media[0].id.clone();
+    let mut jpeg = image("jpeg", false, 0.);
+    jpeg.effort = None;
+    jpeg.background = Some("#ffffff".into());
     engine
         .start(vec![(
             id.clone(),
@@ -98,6 +101,7 @@ fn actual_image_study_preserves_source_deduplicates_and_exports_without_overwrit
                 image("webp", true, 100.),
                 image("webp", false, 0.),
                 image("webp", false, 80.),
+                jpeg,
                 image("webp", false, 80.),
             ],
         )])
@@ -106,7 +110,7 @@ fn actual_image_study_preserves_source_deduplicates_and_exports_without_overwrit
     let data = engine.snapshot();
     assert_eq!(data.jobs[0].state, "ready", "{:?}", data.jobs);
     assert!(data.jobs[0].errors.is_empty(), "{:?}", data.jobs);
-    assert_eq!(data.media[0].candidates.len(), 4);
+    assert_eq!(data.media[0].candidates.len(), 5);
     assert_eq!(hash_file(&original).unwrap(), hash);
     for c in &data.media[0].candidates {
         assert_eq!(c.properties.width, Some(64));
@@ -125,8 +129,8 @@ fn actual_image_study_preserves_source_deduplicates_and_exports_without_overwrit
     let export = dir.path().join("输出");
     let first = engine.export(&ids, &export, true).unwrap();
     let again = engine.export(&ids, &export, true).unwrap();
-    assert_eq!(first.len(), 4);
-    assert_eq!(again.len(), 4);
+    assert_eq!(first.len(), 5);
+    assert_eq!(again.len(), 5);
     for name in &first {
         assert!(!again.contains(name));
     }

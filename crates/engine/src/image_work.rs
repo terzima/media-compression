@@ -8,7 +8,7 @@ use std::{
     fs::File,
     io::{BufReader, Read, Seek, SeekFrom, Write},
     path::Path,
-    process::Command,
+    process::{Command, Stdio},
 };
 
 fn open(path: &Path) -> Result<(DynamicImage, Properties, Option<Vec<u8>>)> {
@@ -250,13 +250,26 @@ fn composite(image: &RgbaImage, bg: [u8; 3]) -> image::RgbImage {
         )
     })
 }
+fn codec_command(program: &Path) -> Command {
+    let mut command = Command::new(program);
+    command.stdin(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+    command
+}
 fn helper(program: &Path, args: &[String]) -> Result<()> {
-    let output = Command::new(program).args(args).output().with_context(|| {
-        format!(
-            "Cannot start {}",
-            program.file_name().unwrap_or_default().to_string_lossy()
-        )
-    })?;
+    let output = codec_command(program)
+        .args(args)
+        .output()
+        .with_context(|| {
+            format!(
+                "Cannot start {}",
+                program.file_name().unwrap_or_default().to_string_lossy()
+            )
+        })?;
     if !output.status.success() {
         bail!(
             "Encoder failed: {}",
@@ -291,7 +304,7 @@ fn ssim(
     let b = temp.join(format!("{label}-candidate.ppm"));
     write_ppm(&a, original)?;
     write_ppm(&b, candidate)?;
-    let output = Command::new(ffmpeg)
+    let output = codec_command(ffmpeg)
         .args(["-hide_banner", "-nostdin", "-threads", "1", "-i"])
         .arg(a)
         .args(["-threads", "1", "-i"])
@@ -477,18 +490,26 @@ pub fn execute(request: ImageRequest) -> Result<ImageResult> {
             write!(file, "P6\n{} {}\n255\n", rgb.width(), rgb.height())?;
             file.write_all(rgb.as_raw())?;
             drop(file);
-            helper(
-                &request.tools.cjpeg,
-                &[
+            // cjpeg's C filename API is not Unicode-safe on Windows. Rust opens
+            // both files and passes native handles; the codec receives only options.
+            let output = codec_command(&request.tools.cjpeg)
+                .args([
                     "-quality".into(),
                     quality,
                     "-optimize".into(),
                     "-progressive".into(),
-                    "-outfile".into(),
-                    request.output.to_string_lossy().into(),
-                    ppm.to_string_lossy().into(),
-                ],
-            )?;
+                ])
+                .stdin(Stdio::from(File::open(&ppm)?))
+                .stdout(Stdio::from(File::create(&request.output)?))
+                .stderr(Stdio::piped())
+                .output()
+                .context("Cannot start bundled JPEG encoder")?;
+            if !output.status.success() {
+                bail!(
+                    "JPEG encoder failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
         }
         _ => bail!("Unknown output format"),
     }
