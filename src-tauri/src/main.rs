@@ -4,8 +4,8 @@ use media_engine::{Engine, Settings, Snapshot, Tools};
 use std::{
     path::PathBuf,
     sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc, Mutex,
     },
 };
 use tauri::{Emitter, Manager, State};
@@ -15,9 +15,21 @@ struct AppState {
     engine: Result<Arc<Engine>, String>,
     playback: playback::Playback,
     play_request: AtomicU64,
+    play_cancel: Mutex<Arc<AtomicBool>>,
 }
 fn engine(state: &AppState) -> Result<Arc<Engine>, String> {
     state.engine.clone()
+}
+fn interrupt_playback(
+    state: &AppState,
+    action: &str,
+    value: Option<f64>,
+    end: Option<f64>,
+) -> Result<(), String> {
+    let cancel = state.play_cancel.lock().unwrap();
+    state.play_request.fetch_add(1, Ordering::SeqCst);
+    cancel.store(true, Ordering::SeqCst);
+    state.playback.control(action, value, end)
 }
 #[tauri::command]
 fn encoder_capabilities() -> serde_json::Value {
@@ -98,8 +110,7 @@ async fn export_candidates(
 }
 #[tauri::command]
 fn clear_cache(state: State<AppState>) -> Result<bool, String> {
-    state.play_request.fetch_add(1, Ordering::SeqCst);
-    state.playback.control("stop", None, None)?;
+    interrupt_playback(&state, "stop", None, None)?;
     engine(&state)?
         .clear()
         .map(|_| true)
@@ -117,7 +128,7 @@ fn playback_control(
     end: Option<f64>,
 ) -> Result<(), String> {
     if ["stop", "pause"].contains(&action.as_str()) {
-        state.play_request.fetch_add(1, Ordering::SeqCst);
+        return interrupt_playback(&state, &action, value, end);
     }
     state.playback.control(&action, value, end)
 }
@@ -130,24 +141,41 @@ async fn play_media(
     if position.is_some_and(|v| !v.is_finite() || v < 0.) {
         return Err("Playback position is invalid".into());
     }
-    let request = state.play_request.fetch_add(1, Ordering::SeqCst) + 1;
     let engine = engine(&state)?;
+    let cancel = Arc::new(AtomicBool::new(false));
+    let request = {
+        let mut previous = state.play_cancel.lock().unwrap();
+        previous.store(true, Ordering::SeqCst);
+        *previous = cancel.clone();
+        state.play_request.fetch_add(1, Ordering::SeqCst) + 1
+    };
+    let preparation_engine = engine.clone();
     let key = id.clone();
-    let (path, rate, channels) = tauri::async_runtime::spawn_blocking(move || {
-        engine.playback_pcm(&key).map_err(|e| format!("{e:#}"))
+    let prepared = tauri::async_runtime::spawn_blocking(move || {
+        preparation_engine
+            .playback_pcm_cancelable(&key, &cancel)
+            .map_err(|e| format!("{e:#}"))
     })
     .await
-    .map_err(|e| e.to_string())??;
+    .map_err(|e| e.to_string())?;
+    let _preparation = state.play_cancel.lock().unwrap();
     if state.play_request.load(Ordering::SeqCst) != request {
         return Ok(());
     }
-    state.playback.play(
-        id,
-        path,
-        rate,
-        channels,
-        position.unwrap_or_else(|| state.playback.info().position),
-    );
+    let (path, rate, channels) = prepared?;
+    let current = state.playback.info();
+    let position = position.unwrap_or_else(|| {
+        if current
+            .id
+            .as_deref()
+            .is_some_and(|old| engine.same_media(old, &id))
+        {
+            current.position
+        } else {
+            0.
+        }
+    });
+    state.playback.play(id, path, rate, channels, position);
     Ok(())
 }
 fn main() {
@@ -188,6 +216,7 @@ fn main() {
                 engine,
                 playback: playback::Playback::new(),
                 play_request: AtomicU64::new(0),
+                play_cancel: Mutex::new(Arc::new(AtomicBool::new(false))),
             });
             Ok(())
         })
@@ -205,6 +234,16 @@ fn main() {
             playback_control,
             playback_info
         ])
-        .run(tauri::generate_context!())
-        .expect("Desktop application could not start");
+        .build(tauri::generate_context!())
+        .expect("Desktop application could not start")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+                let state = app.state::<AppState>();
+                let _ = interrupt_playback(&state, "stop", None, None);
+                if let Ok(engine) = engine(&state) {
+                    engine.cancel(None);
+                }
+                media_engine::process::shutdown();
+            }
+        });
 }

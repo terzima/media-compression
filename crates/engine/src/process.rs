@@ -1,12 +1,35 @@
 use anyhow::{bail, Context, Result};
 use std::{
+    collections::HashSet,
     io::Write,
     path::Path,
     process::{Command, Stdio},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex,
+    },
     thread,
     time::{Duration, Instant},
 };
+
+static STOPPING: AtomicBool = AtomicBool::new(false);
+static CHILDREN: Mutex<Option<HashSet<u32>>> = Mutex::new(None);
+
+/// Prevent new helpers and terminate our active process groups before desktop exit.
+pub fn shutdown() {
+    let children = CHILDREN.lock().unwrap();
+    STOPPING.store(true, Ordering::SeqCst);
+    #[cfg(unix)]
+    if let Some(children) = children.as_ref() {
+        for id in children {
+            unsafe {
+                libc::kill(-(*id as i32), libc::SIGKILL);
+            }
+        }
+    }
+    // Windows closes the kill-on-close job handles when the desktop process exits.
+    drop(children);
+}
 
 pub fn run(
     program: &Path,
@@ -48,12 +71,18 @@ pub fn run(
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x08000000);
     }
+    let mut children = CHILDREN.lock().unwrap();
+    if STOPPING.load(Ordering::SeqCst) {
+        bail!("Application is closing");
+    }
     let child = command.spawn().with_context(|| {
         format!(
             "Could not start bundled helper {}",
             program.file_name().unwrap_or_default().to_string_lossy()
         )
     })?;
+    children.get_or_insert_with(HashSet::new).insert(child.id());
+    drop(children);
     let mut child = ChildGuard(child);
     #[cfg(windows)]
     let _job = WindowsJob::attach(&child)?;
@@ -119,6 +148,9 @@ impl Drop for ChildGuard {
             let _ = self.0.kill();
             let _ = self.0.wait();
         }
+        if let Some(children) = CHILDREN.lock().unwrap().as_mut() {
+            children.remove(&self.0.id());
+        }
     }
 }
 
@@ -160,7 +192,7 @@ impl Drop for WindowsJob {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     #[cfg(unix)]

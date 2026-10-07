@@ -14,6 +14,25 @@ use std::{
 };
 use uuid::Uuid;
 
+#[derive(serde::Serialize, serde::Deserialize)]
+struct CacheRecord {
+    schema: u32,
+    key: String,
+    checksum: String,
+    candidate: Candidate,
+}
+impl CacheRecord {
+    fn checksum(candidate: &Candidate) -> Result<String> {
+        Ok(hex::encode(Sha256::digest(serde_json::to_vec(candidate)?)))
+    }
+    fn verified(&self, key: &str, settings: &Settings) -> Result<bool> {
+        Ok(self.schema == 1
+            && self.key == key
+            && self.candidate.settings == [settings.clone()]
+            && self.checksum == Self::checksum(&self.candidate)?)
+    }
+}
+
 pub struct Engine {
     pub root: PathBuf,
     pub tools: Tools,
@@ -28,10 +47,16 @@ pub struct Engine {
 }
 
 pub fn hash_file(path: &Path) -> Result<String> {
+    hash_file_cancelable(path, &AtomicBool::new(false))
+}
+fn hash_file_cancelable(path: &Path, cancel: &AtomicBool) -> Result<String> {
     let mut input = File::open(path)?;
     let mut hash = Sha256::new();
     let mut buf = [0u8; 65536];
     loop {
+        if cancel.load(Ordering::Relaxed) {
+            bail!("Canceled");
+        }
         let n = input.read(&mut buf)?;
         if n == 0 {
             break;
@@ -74,6 +99,7 @@ impl Engine {
         fs::create_dir_all(root.join("cache"))?;
         let mut versions = Vec::new();
         let mut identity = Sha256::new();
+        identity.update(env!("CARGO_PKG_VERSION").as_bytes());
         for (name, path, args) in [
             ("ffmpeg", &tools.ffmpeg, vec!["-version"]),
             ("ffprobe", &tools.ffprobe, vec!["-version"]),
@@ -274,7 +300,8 @@ impl Engine {
                 if media.error.is_none() {
                     let properties = media.properties.as_ref().context("Missing properties")?;
                     for setting in options {
-                        settings::validate(setting, properties)?;
+                        settings::validate(setting, properties)
+                            .with_context(|| format!("{}: invalid settings", media.name))?;
                     }
                 }
             }
@@ -430,7 +457,7 @@ impl Engine {
     fn encode(&self, media: &Media, s: Settings, cancel: &AtomicBool) -> Result<Candidate> {
         let p = media.properties.as_ref().context("File is not supported")?;
         settings::validate(&s, p)?;
-        if hash_file(&media.path)? != media.sha256 {
+        if hash_file_cancelable(&media.path, cancel)? != media.sha256 {
             bail!("Source changed; import the file again");
         }
         let mut hash = Sha256::new();
@@ -444,15 +471,18 @@ impl Engine {
             .join(format!("{key}.{}", extension(&s.format)));
         let record = output.with_extension("json");
         let mut candidate = if record.exists() && output.exists() {
-            let c: Candidate = match serde_json::from_slice(&fs::read(&record)?) {
-                Ok(c) => c,
-                Err(_) => {
+            let cached: Option<CacheRecord> = serde_json::from_slice(&fs::read(&record)?).ok();
+            let c = match cached {
+                Some(cached) if cached.verified(&key, &s)? => cached.candidate,
+                _ => {
                     fs::remove_file(&record)?;
                     fs::remove_file(&output)?;
                     return self.encode(media, s, cancel);
                 }
             };
-            if fs::metadata(&output)?.len() == c.bytes && hash_file(&output)? == c.sha256 {
+            if fs::metadata(&output)?.len() == c.bytes
+                && hash_file_cancelable(&output, cancel)? == c.sha256
+            {
                 c
             } else {
                 fs::remove_file(&record)?;
@@ -477,14 +507,14 @@ impl Engine {
             if cancel.load(Ordering::Relaxed) {
                 bail!("Canceled");
             }
-            if hash_file(&media.path)? != media.sha256 {
+            if hash_file_cancelable(&media.path, cancel)? != media.sha256 {
                 bail!("Source changed while processing");
             }
             let bytes = fs::metadata(&stage)?.len();
             if bytes == 0 {
                 bail!("Encoder returned an empty file");
             }
-            let sha256 = hash_file(&stage)?;
+            let sha256 = hash_file_cancelable(&stage, cancel)?;
             let c = Candidate {
                 id: Uuid::new_v4().to_string(),
                 media_id: media.id.clone(),
@@ -505,14 +535,19 @@ impl Engine {
             match cache_stage.persist_noclobber(&output) {
                 Ok(_) => {}
                 Err(e) if e.error.kind() == std::io::ErrorKind::AlreadyExists => {
-                    if hash_file(&output)? != c.sha256 {
+                    if hash_file_cancelable(&output, cancel)? != c.sha256 {
                         bail!("Cache identity collision");
                     }
                 }
                 Err(e) => return Err(e.error.into()),
             }
             let mut metadata = tempfile::NamedTempFile::new_in(self.root.join("cache"))?;
-            metadata.write_all(&serde_json::to_vec(&c)?)?;
+            metadata.write_all(&serde_json::to_vec(&CacheRecord {
+                schema: 1,
+                key,
+                checksum: CacheRecord::checksum(&c)?,
+                candidate: c.clone(),
+            })?)?;
             metadata.as_file().sync_all()?;
             metadata.persist(&record)?;
             c
@@ -736,8 +771,10 @@ impl Engine {
     }
     fn pcm_hash(&self, path: &Path, rate: u32, cancel: &AtomicBool) -> Result<String> {
         let pcm = self.pcm_path(path, rate, cancel)?;
-        let hash = hash_file(&pcm)?;
-        fs::remove_file(pcm)?;
+        let hash = hash_file_cancelable(&pcm, cancel);
+        let cleanup = fs::remove_file(pcm);
+        let hash = hash?;
+        cleanup?;
         Ok(hash)
     }
     pub fn cancel(&self, id: Option<&str>) {
@@ -918,7 +955,23 @@ impl Engine {
         Ok(output.to_string_lossy().into())
     }
     pub fn playback_pcm(&self, id: &str) -> Result<(PathBuf, u32, u16)> {
+        self.playback_pcm_cancelable(id, &AtomicBool::new(false))
+    }
+    pub fn same_media(&self, a: &str, b: &str) -> bool {
+        self.data.lock().unwrap().media.iter().any(|m| {
+            let contains = |id: &str| m.id == id || m.candidates.iter().any(|c| c.id == id);
+            contains(a) && contains(b)
+        })
+    }
+    pub fn playback_pcm_cancelable(
+        &self,
+        id: &str,
+        cancel: &AtomicBool,
+    ) -> Result<(PathBuf, u32, u16)> {
         let _operation = self.operations.lock().unwrap();
+        if cancel.load(Ordering::Relaxed) {
+            bail!("Canceled");
+        }
         let data = self.snapshot();
         let (path, p) = if let Some(m) = data.media.iter().find(|m| m.id == id) {
             (
@@ -939,7 +992,7 @@ impl Engine {
         }
         let rate = p.sample_rate.unwrap_or(48000);
         let channels = p.channels.unwrap_or(1);
-        let hash = hash_file(&path)?;
+        let hash = hash_file_cancelable(&path, cancel)?;
         let expected = data
             .media
             .iter()
@@ -966,7 +1019,7 @@ impl Engine {
             {
                 bail!("Not enough playback cache disk space");
             }
-            let pcm = self.pcm_path(&path, rate, &AtomicBool::new(false))?;
+            let pcm = self.pcm_path(&path, rate, cancel)?;
             fs::rename(pcm, &dest)?;
         }
         Ok((dest, rate, channels))

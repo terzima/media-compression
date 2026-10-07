@@ -135,10 +135,26 @@ fn actual_image_study_preserves_source_deduplicates_and_exports_without_overwrit
     let c = &data.media[0].candidates[0];
     std::fs::write(&c.path, b"corrupt").unwrap();
     engine
-        .start(vec![(id, vec![c.settings[0].clone()])])
+        .start(vec![(id.clone(), vec![c.settings[0].clone()])])
         .unwrap();
     wait(&engine);
     assert_eq!(hash_file(&c.path).unwrap(), c.sha256);
+    // Valid JSON with changed diagnostics/settings is also rejected, not just broken output bytes.
+    let record = c.path.with_extension("json");
+    let mut metadata: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&record).unwrap()).unwrap();
+    metadata["candidate"]["diagnostics"]["ssimLight"] = serde_json::json!(0.123);
+    std::fs::write(&record, serde_json::to_vec(&metadata).unwrap()).unwrap();
+    engine
+        .start(vec![(id, vec![c.settings[0].clone()])])
+        .unwrap();
+    wait(&engine);
+    let repaired: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(record).unwrap()).unwrap();
+    assert_ne!(
+        repaired["candidate"]["diagnostics"]["ssimLight"],
+        serde_json::json!(0.123)
+    );
 }
 #[test]
 #[ignore = "requires bundled helpers"]
@@ -190,6 +206,11 @@ fn actual_audio_formats_timing_and_lossless_samples() {
     let data = engine.snapshot();
     assert!(data.jobs[0].errors.is_empty(), "{:?}", data.jobs);
     assert_eq!(data.media[0].candidates.len(), 4);
+    assert!(engine.same_media(&data.media[0].id, &data.media[0].candidates[0].id));
+    assert!(!engine.same_media(&data.media[0].id, "unrelated"));
+    assert!(engine
+        .playback_pcm_cancelable(&data.media[0].id, &std::sync::atomic::AtomicBool::new(true))
+        .is_err());
     for c in &data.media[0].candidates {
         assert_eq!(c.properties.channels, Some(2));
         assert!(c.diagnostics.duration_delta.unwrap().abs() < 0.025);
