@@ -1,0 +1,82 @@
+name: Native builds and bundled engine tests
+on:
+  pull_request:
+  push:
+    branches: [main, 'codex/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: native-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            bundle: dmg
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            bundle: dmg
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            bundle: nsis
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    env:
+      MEDIA_BUILD_TARGET: ${{ matrix.target }}
+      MACOSX_DEPLOYMENT_TARGET: '14.0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: msys2/setup-msys2@v2
+        if: runner.os == 'Windows'
+        with:
+          msystem: MINGW64
+          update: true
+          install: make mingw-w64-x86_64-gcc mingw-w64-x86_64-binutils
+          path-type: inherit
+      - name: Windows native build environment
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          "C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "C:\msys64\usr\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "CC=gcc" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CXX=g++" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Build tools
+        run: python -m pip install cmake==4.4.4 ninja==1.13.2
+      - name: Rust toolchain
+        shell: bash
+        run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy
+      - run: npm ci
+      - run: npm run codecs
+      - run: npm run worker
+      - run: npm run check
+      - run: cargo fmt --all --check
+      - run: cargo test --locked --workspace -- --include-ignored
+      - run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - name: Source and license material
+        run: node scripts/package-sources.mjs
+      - name: Installer build (unsigned CI candidate)
+        run: npm exec tauri build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundle }} --ci
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: candidate-${{ matrix.target }}
+          if-no-files-found: warn
+          path: |
+            target/${{ matrix.target }}/release/bundle/
+            artifacts/*.json
+            artifacts/*.txt
+            artifacts/*.sha256
+            artifacts/*.tar.gz
