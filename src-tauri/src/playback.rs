@@ -197,8 +197,14 @@ impl Iterator for PcmSource {
     fn next(&mut self) -> Option<f32> {
         if let Some((start, end)) = *self.loops.lock().ok()? {
             let current = self.position.load(Ordering::Relaxed);
-            if current >= ((end * self.rate as f64).floor() as u64 * self.channels as u64) {
-                let sample = (start * self.rate as f64).floor() as u64 * self.channels as u64;
+            // A candidate may be slightly shorter after codec delay/padding handling.
+            let total = (self.duration * self.rate as f64).round() as u64 * self.channels as u64;
+            let sample =
+                ((start * self.rate as f64).floor() as u64).saturating_mul(self.channels as u64);
+            let end = ((end * self.rate as f64).floor() as u64)
+                .saturating_mul(self.channels as u64)
+                .min(total);
+            if sample < end && current >= end {
                 self.file.seek(SeekFrom::Start(sample * 4)).ok()?;
                 self.position.store(sample, Ordering::Relaxed);
             }
@@ -242,7 +248,7 @@ mod tests {
             rate: 2,
             channels: 2,
             position: position.clone(),
-            loops,
+            loops: loops.clone(),
             duration: 1.5,
         };
         assert_eq!(source.next(), Some(1.));
@@ -251,6 +257,17 @@ mod tests {
         assert_eq!(source.next(), Some(4.));
         assert_eq!(source.next(), Some(1.));
         assert_eq!(position.load(Ordering::Relaxed), 1);
+        // Loop bounds from an original longer than this candidate must not hit EOF.
+        *loops.lock().unwrap() = Some((0., 2.));
+        for expected in [2., 3., 4., 5., 6., 1.] {
+            assert_eq!(source.next(), Some(expected));
+        }
+        // An out-of-range loop start cannot repeatedly seek outside the file.
+        *loops.lock().unwrap() = Some((2., 3.));
+        for expected in [2., 3., 4., 5., 6.] {
+            assert_eq!(source.next(), Some(expected));
+        }
+        assert_eq!(source.next(), None);
     }
     #[test]
     #[ignore = "requires an actual audio output device; run on a test installation"]
