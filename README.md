@@ -20,27 +20,44 @@ The installed application bundles its codecs and needs no account, network, Pyth
 
 ## Set it up with your agent
 
-After installing the desktop app, copy and paste this request into your agent. Replace the bracketed folder with the folder containing your media and intended export locations:
+Copy and paste this request into an agent with local terminal and download access. It works whether or not you already have the app. Replace the bracketed folder with the folder containing your media and intended export locations, or let the agent ask for it:
 
 ```text
-Set up the installed Media Compression app for this agent. Find its bundled
-media-compression-agent executable and read --help, guide, capabilities and tools.
-Grant access only to [my media folder] using config --root. Prefer its local
-stdio MCP tools: configure this client while preserving existing servers,
-load the bundled compression-study skill, and verify tool discovery and
-compression_capabilities. If MCP cannot be configured or reloaded here, use
-its full-path JSON CLI and embedded guide instead. Tell me which interface
-is ready and which folder is granted. Do not compress or export files during
-setup; preserve my originals.
+Download, install if needed, and set up Media Compression for this agent.
+Official project: https://github.com/terzima/media-compression
+Installers: https://github.com/terzima/media-compression/releases
+My media/export folder: [my media folder; ask me if unspecified].
+
+Detect my OS and CPU architecture. Reuse an installed app if its bundled
+media-compression-agent works. Otherwise download the matching official
+installer and verify its published SHA-256 before installing per-user.
+For testing, I accept an unsigned development build if no release is
+available: find a passing agent-enabled build through
+https://github.com/terzima/media-compression/pull/2 and obtain its matching
+candidate artifact, checksums and build evidence. Identify it as a
+development build. If downloads need login, an artifact has expired, or
+the OS requires my interaction, explain the exact remaining step. Do not
+disable OS protections or install development tools or replacement codecs.
+
+Find the bundled agent executable and read --help, guide, capabilities
+and tools. Grant only my specified folders using config --root. Prefer
+local stdio MCP: preserve existing client servers, load the bundled study
+skill where supported, and verify tool discovery and compression_capabilities.
+If MCP cannot be configured or reloaded here, use the full-path JSON CLI
+and embedded guide, and verify capabilities and tools. Report the installed
+version/build, executable path, active interface and granted folders.
+Do not compress or export during setup; preserve my originals.
 ```
 
-Your agent needs local terminal access to this computer and, for MCP, a client that supports local stdio servers. This request is self-contained and does not require the agent to fetch a GitHub page. You do not need to know shell commands. If you leave the folder unspecified, the agent should ask which folder to use. Setup does not start compression or export. During development, these instructions apply to a build containing the agent extension; signed stable installers remain a release gate.
+You do not need to know shell commands or have the app downloaded first. Downloading needs internet access; installed compression runs locally. MCP needs a client that supports local stdio servers; terminal access is sufficient for the CLI fallback. An agent that cannot access your computer cannot install or run local software. Login, native permission dialogs, or a client reload may require your interaction; the agent should complete the available steps and explain what remains.
+
+**Current availability:** signed stable installers have not been published. Development installers come from successful GitHub Actions builds and may require GitHub sign-in to download. They are unsigned test candidates, with signing and clean minimum-OS qualification still deferred. The request explicitly accepts these for testing; remove that paragraph if you want only a published release. It must never claim setup succeeded when no suitable installer could be obtained.
 
 Once setup is complete, try: **“Study this file and show me the smallest candidates with good quality, explain the tradeoffs, and let me compare them before export.”** The agent measures real outputs and refines settings; lossy quality still depends on your requirements and visual/listening feedback.
 
 ### Setup instructions for agents
 
-1. Find the installed `media-compression-agent` executable. On macOS, check `/Applications/Media Compression.app/Contents/MacOS/` and `~/Applications/Media Compression.app/Contents/MacOS/`. On Windows, locate the installed GUI via its per-user uninstall record or the user's installation path; `media-compression-agent.exe` is beside the GUI executable. Use the full executable path and argument arrays. If the app or agent helper is missing, explain the missing installation/build and help locate a suitable installer; do not install development tools or replacement codecs as a setup workaround.
+1. Detect the native OS/architecture and look for an installed `media-compression-agent`. On macOS, check `/Applications/Media Compression.app/Contents/MacOS/` and `~/Applications/Media Compression.app/Contents/MacOS/`. On Windows, locate the GUI via its per-user uninstall record or the user's installation path; `media-compression-agent.exe` is beside it. Test the helper's discovery commands before replacing a working copy. If the app/helper is missing, follow [installer acquisition](#installer-acquisition-for-agents), then resume discovery. Use full executable paths and argument arrays. Do not build from source, install developer tools, or add replacement codecs as an end-user setup workaround.
 2. Run the executable with `--help`, then `guide`, `capabilities` and `tools`. Read the returned study instructions and schemas. No workspace, media import, account, model or API key is needed for these discovery commands.
 3. Resolve the folder specified by the user and run `config --root <absolute-folder>`. Grant only the requested folders; repeat `--root` when multiple folders are authorized. If no folder was identified, ask for it. The GUI's **Agent connection → Choose granted folder → Copy configuration** provides the equivalent configuration and the bundled skill path.
 4. If this client supports local MCP configuration, add the generated executable/arguments using its documented configuration format, preserve existing servers, and load or install the bundled `media-compression` skill through the client's supported mechanism when available. The MCP server already includes the skill in its instructions. Keep the server local over stdio. Do not add cloud services, credentials, or arbitrary folders. Restart/reload the connection if the client requires it, and distinguish that step from completed setup.
@@ -48,6 +65,22 @@ Once setup is complete, try: **“Study this file and show me the smallest candi
 6. Report the active interface and granted folders. Keep setup separate from media processing. For a later compression request, use the guide to run real candidate studies from originals, show exact bytes/settings/diagnostics and meaningful tradeoffs, and export only the selections authorized by the user. Agent and GUI studies use separate workspaces; outputs can be opened normally.
 
 Both interfaces use the same engine and bundled codecs. The connected agent has its own model/data policies; this app supplies local compression tools. See [tool schemas, JSON requests and workspace details](docs/AGENT_INTERFACE.md). The GUI remains independently usable.
+
+### Installer acquisition for agents
+
+Use only assets from this project's [Releases](https://github.com/terzima/media-compression/releases) or its own successful [Actions builds](https://github.com/terzima/media-compression/actions). Check macOS 14+ or Windows 11 x64 and select the native architecture. Prefer a published stable release. If none is available and the setup request accepts development builds, use an agent-enabled commit with successful native checks; [PR #2](https://github.com/terzima/media-compression/pull/2) records the agent extension's build evidence. Run [37700839336](https://github.com/terzima/media-compression/actions/runs/37700839336) at `b55da8ad3e6f33e31dbc11ba19bd4904fa70edd1` passed all three targets. Artifacts expire; this run is evidence, not a permanent download endpoint. Do not substitute an older desktop-only build or an artifact from a failed run.
+
+| Computer | Development artifact | Installer inside artifact |
+|---|---|---|
+| Apple Silicon Mac | `candidate-aarch64-apple-darwin` | DMG under `release/bundle/dmg/` |
+| Intel Mac | `candidate-x86_64-apple-darwin` | DMG under `release/bundle/dmg/` |
+| Windows x64 | `candidate-x86_64-pc-windows-msvc` | EXE under `release/bundle/nsis/` |
+
+GitHub may require an authenticated browser, connector or existing API session to download Actions artifacts. Do not ask the user to paste credentials into chat. If access or artifact expiry blocks acquisition, identify the exact required download or request a matching installer from the project owner; do not report the app installed or trigger an expensive source build. An agent without download access can continue once the user supplies the official installer and checksums.
+
+Extract the selected artifact into a new temporary directory. Find `artifacts/installer-checksums.sha256`, `artifacts/build-evidence.json`, and `artifacts/installed-bundle-evidence.json`; verify the installer SHA-256 and matching commit/target. The checksum paths such as `dmg/<name>.dmg` are relative to the bundle directory, not the extracted artifact root. A matching checksum proves consistency with the downloaded build record; it does not establish a signed or qualified release.
+
+On macOS, verify/mount the DMG read-only, copy the entire app bundle to `~/Applications`, and unmount it. On Windows, run the per-user NSIS installer with its bundled offline WebView2. Preserve an existing installation; if an update requires closing the running GUI, retain unsaved work and explain that step before replacement. If an OS dialog requires interaction, report it accurately and let the user complete it; do not remove quarantine or change system security policy. Verify the installed helper's `--version` and discovery commands. Report the release tag or exact development commit and installer hash. Downloading, checksum validation, installation, helper execution and MCP discovery are separate outcomes; report only those actually verified.
 
 ## Development
 

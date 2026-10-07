@@ -4,7 +4,7 @@ The optional native `media-compression-agent` executable provides MCP stdio tool
 
 ## Connect an MCP client
 
-Users can paste the setup request from [the README](../README.md#set-it-up-with-your-agent) into a terminal-capable agent. The README gives the agent executable discovery, guide/schema loading, folder grants, client configuration and connection-verification steps; the CLI is the fallback when client setup is unavailable.
+Users can paste the setup request from [the README](../README.md#set-it-up-with-your-agent) into a terminal-capable agent, even before downloading the app. The README covers official installer acquisition, architecture/checksum/build verification, per-user installation, executable discovery, guide/schema loading, folder grants, client configuration and connection verification. Development artifacts may need GitHub access or native OS interaction; absent installers are reported honestly. The CLI is the fallback when client setup is unavailable.
 
 In the GUI, choose **Agent connection → Choose granted folder**. Copy the displayed configuration into your client's MCP settings. The generated command is the actual bundled executable; its arguments grant only the chosen folder. The JSON `mcpServers` layout is accepted by compatible clients; clients with another configuration format can use the same command/arguments. Multiple grants use repeated `--root` arguments.
 
