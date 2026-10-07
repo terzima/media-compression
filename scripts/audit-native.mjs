@@ -10,8 +10,8 @@ const files = ['ffmpeg','ffprobe','pngquant','cwebp','cjpeg'].map(n => path.reso
 files.push(path.join(root,'media-compression'+ext), path.resolve('src-tauri/binaries',`media-worker-${workerTarget}${ext}`));
 const evidence = [];
 for (const file of files) {
-  const result = spawnSync(windows ? 'objdump' : '/usr/bin/otool', windows ? ['-p',file] : ['-L',file], { encoding:'utf8' });
-  if (result.status !== 0) throw Error(`Dependency inspection failed: ${file}: ${result.stderr}`);
+  const result = spawnSync(windows ? 'objdump' : '/usr/bin/otool', windows ? ['-p',file] : ['-L',file], { encoding:'utf8',maxBuffer:64*1024*1024 });
+  if (result.status !== 0) throw Error(`Dependency inspection failed: ${file}: ${result.error?.message||result.stderr}`);
   const dependencies = windows ? [...result.stdout.matchAll(/DLL Name:\s*(\S+)/g)].map(m => m[1]) : result.stdout.split('\n').slice(1).map(l => l.trim().split(' (')[0]).filter(Boolean);
   if (!dependencies.length) throw Error(`No native dependencies identified: ${file}`);
   const unsupported = dependencies.filter(d => windows ? /^(vcruntime|msvcp|libgcc|libstdc\+\+|libwinpthread)/i.test(d) : !d.startsWith('/usr/lib/') && !d.startsWith('/System/Library/'));
