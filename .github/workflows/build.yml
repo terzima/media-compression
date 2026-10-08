@@ -132,6 +132,7 @@ jobs:
         if: always()
         with:
           name: candidate-${{ matrix.target }}
+          overwrite: true # Retry unpublished CI artifacts; release assets remain immutable.
           if-no-files-found: warn
           path: |
             target/${{ matrix.target }}/release/bundle/
@@ -160,6 +161,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: verified-prerelease
+          overwrite: true
           path: artifacts/release/
           if-no-files-found: error
       - name: Publish complete alpha preview
