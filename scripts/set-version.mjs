@@ -11,10 +11,10 @@ export async function setVersion(version,root=process.cwd()) {
     if(file==='package-lock.json')value.packages[''].version=version;
     files.set(file,JSON.stringify(value,null,2)+'\n');
   }
-  const cargo=await readFile(path.join(root,'Cargo.toml'),'utf8');
+  const cargo=(await readFile(path.join(root,'Cargo.toml'),'utf8')).replaceAll('\r\n','\n');
   if(!/\[workspace.package\]\nversion = "[^"]+"/.test(cargo))throw Error('Workspace version missing');
   files.set('Cargo.toml',cargo.replace(/(\[workspace.package\]\nversion = ")[^"]+/,`$1${version}`));
-  let lock=await readFile(path.join(root,'Cargo.lock'),'utf8');
+  let lock=(await readFile(path.join(root,'Cargo.lock'),'utf8')).replaceAll('\r\n','\n');
   for(const name of ['media-agent','media-compression','media-engine']){
     const expression=new RegExp(`(name = "${name}"\\nversion = ")[^"]+`);
     if(!expression.test(lock))throw Error(`Lockfile package missing: ${name}`);

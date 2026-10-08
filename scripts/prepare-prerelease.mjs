@@ -32,8 +32,8 @@ export async function prepareRelease({inputDir,outputDir,tag,commit,runUrl,sourc
   const version=tag.slice(1),pkg=await json(path.join(root,'package.json'));
   const tauri=await json(path.join(root,'src-tauri/tauri.conf.json'));
   const lock=await json(path.join(root,'package-lock.json'));
-  const cargo=await readFile(path.join(root,'Cargo.toml'),'utf8');
-  const cargoLock=await readFile(path.join(root,'Cargo.lock'),'utf8');
+  const cargo=(await readFile(path.join(root,'Cargo.toml'),'utf8')).replaceAll('\r\n','\n');
+  const cargoLock=(await readFile(path.join(root,'Cargo.lock'),'utf8')).replaceAll('\r\n','\n');
   if([pkg.version,tauri.version,lock.version,lock.packages[''].version,cargo.match(/\[workspace.package\]\nversion = "([^"]+)"/)?.[1]].some(v=>v!==version))throw Error('Tag and application versions differ');
   for(const name of ['media-agent','media-compression','media-engine'])if(!cargoLock.includes(`name = "${name}"\nversion = "${version}"`))throw Error('Rust lockfile version differs');
   const pending=[],platforms=[];

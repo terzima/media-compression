@@ -68,6 +68,7 @@ test('unsigned publication rejects stable tags and version mismatches',async t=>
 test('version helper updates all manifests and project lock entries',async t=>{
   const f=await fixture(t),root=path.join(f.dir,'version');await mkdir(path.join(root,'src-tauri'),{recursive:true});
   for(const file of ['package.json','package-lock.json','src-tauri/tauri.conf.json','Cargo.toml','Cargo.lock'])await copyFile(file,path.join(root,file));
+  for(const file of ['Cargo.toml','Cargo.lock']){const p=path.join(root,file);await writeFile(p,(await readFile(p,'utf8')).replaceAll('\n','\r\n'));}
   await setVersion('0.1.0-alpha.2',root);
   assert.equal(JSON.parse(await readFile(path.join(root,'package-lock.json'))).packages[''].version,'0.1.0-alpha.2');
   assert.ok((await readFile(path.join(root,'Cargo.lock'),'utf8')).includes('name = "media-agent"\nversion = "0.1.0-alpha.2"'));
