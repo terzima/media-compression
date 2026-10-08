@@ -4,7 +4,7 @@ resolver = "2"
 exclude = [".tools/native/pngquant-3.0.3"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 edition = "2021"
 license = "MIT"
 

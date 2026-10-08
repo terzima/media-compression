@@ -3,6 +3,7 @@ on:
   pull_request:
   push:
     branches: [main]
+    tags: ['v*.*.*-alpha.*']
   workflow_dispatch:
 permissions:
   contents: read
@@ -70,6 +71,8 @@ jobs:
             target/${{ matrix.target }}
           key: rust-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
       - run: npm ci
+      - name: Release tooling checks
+        run: node --test scripts/release.node-test.mjs
       - uses: actions/cache/restore@v4
         id: native-cache
         with:
@@ -136,3 +139,32 @@ jobs:
             artifacts/*.txt
             artifacts/*.sha256
             artifacts/*.tar.gz
+  prerelease:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: native
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: candidate-*
+          path: artifacts/candidates
+      - name: Verify and assemble all three native packages
+        run: node scripts/prepare-prerelease.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-prerelease
+          path: artifacts/release/
+          if-no-files-found: error
+      - name: Publish complete alpha preview
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const publish = require('./scripts/publish-prerelease.cjs');
+            await publish({github, context, core});

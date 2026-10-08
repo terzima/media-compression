@@ -2,6 +2,14 @@
 
 Current status: development candidate, not a stable release. Evidence applies to the exact recorded commit/artifact. A build does not establish installation, playback, minimum-OS compatibility, signing or reputation.
 
+## Public alpha previews
+
+The owner authorized publishing an unsigned `v0.1.0-alpha.1` testing preview on 2026-10-07 and a repeatable publication workflow. This explicitly permits public prerelease installers while signing and clean-device stable qualification remain deferred. It does not relax source/license packaging obligations or permit stable-release claims.
+
+Alpha publication is triggered only by matching `vX.Y.Z-alpha.N` tags. All three native builds/tests must pass. Before uploading, the release assembler verifies exact commit/target, clean build records, synchronized manifest versions, installer/source hashes, native dependency and installed helper/agent/desktop evidence, and distribution material. Each installer is accompanied by per-target source/notices/evidence, the tagged project source, release-manifest.json and SHA256SUMS. Draft publication occurs only after every asset is uploaded and its server-reported digest/size matches; existing published versions are never replaced. If a run fails, correct the problem and rerun an unpublished draft only when its existing material still matches, or use a new version.
+
+Release notes must state the unsigned/ad-hoc status, incomplete minimum-OS/interactive device and upgrade/uninstall qualification, observed WebView2 signature limitations and absence of an automatic updater. Public downloads need no GitHub account; an OS may still require user interaction or block unsigned code. The workflow does not disable OS protections or infer runtime success from a successful download. Stable signing/platform/distribution gates below remain required.
+
 ## Observed evidence (2026-10-07)
 
 - Agent extension: local real-codec MCP/CLI studies, previews, cancellation/disconnect shutdown, saved-study/source verification, Unicode/folder exports and workspace scoping pass (five interface tests, including stateless setup discovery); 12 frontend tests and workspace Clippy pass. An ARM64 development DMG at fd53e5e includes the agent/skill and passes installed-agent checks with helper overrides disabled. Native folder selection, displayed bundled paths, clipboard copy and keyboard dismissal/focus restoration were checked in an isolated QA app. The final native matrix runs installed-agent tests on each target and records exact commit/artifact outcomes with [PR #2](https://github.com/terzima/media-compression/pull/2). This does not establish configuration in every third-party MCP client or clean-machine/signing qualification.

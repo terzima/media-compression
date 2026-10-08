@@ -3,6 +3,7 @@ import {invoke,convertFileSrc,isTauri} from '@tauri-apps/api/core';
 import {listen} from '@tauri-apps/api/event';
 import {getCurrentWebview} from '@tauri-apps/api/webview';
 import {bytes,config,label,loadForm,savings,study} from './settings';
+import {version} from '../package.json';
 import type {Candidate,Form,Media,Playback,Snapshot} from './types';
 
 const desktop=isTauri();
@@ -107,7 +108,7 @@ export default function App(){
    </>}
   </section></main>
   <footer className="export-bar"><div><span className="export-icon">↗</span><strong>{outputCount?`${outputCount} output${outputCount===1?'':'s'} selected`:'Choose what to keep'}</strong><span className="muted">{outputCount?bytes(outputBytes):'Smaller candidates are selected by default.'}</span></div><div><label className="check"><input type="checkbox" checked={report} onChange={e=>setReport(e.target.checked)}/> Include JSON report</label><button className="primary" disabled={!desktop||!outputCount||exporting} onClick={()=>void exportFiles()}>{exporting?'Exporting…':'Export selected'} <span>↗</span></button></div></footer>
-  <div className="status-line" role="status"><span>{message||'Local processing · originals preserved · no quality claims'}</span><span>v0.1.0</span></div>
+  <div className="status-line" role="status"><span>{message||'Local processing · originals preserved · no quality claims'}</span><span>v{version}</span></div>
   {agentOpen&&<div className="agent-overlay"><section ref={agentDialog} className="agent-dialog panel" role="dialog" aria-modal="true" aria-labelledby="agent-title"><div className="panel-heading"><h2 id="agent-title">Connect your agent</h2><button autoFocus aria-label="Close agent connection" onClick={()=>{setAgentOpen(false);agentTrigger.current?.focus();}}>×</button></div><p>Grant a folder containing the files and export locations your agent may use. Compression runs locally; your agent's model and data settings govern what it receives.</p>{error&&<p className="error-text" role="alert">{error}</p>}<button className="primary" onClick={async()=>{setAgentCopied(false);const setup=await command<typeof agentSetup>('agent_configuration');if(setup)setAgentSetup(setup);}}>Choose granted folder</button>{agentSetup&&<><label className="field">MCP configuration<textarea aria-label="MCP configuration" readOnly rows={9} value={JSON.stringify(agentSetup.configuration,null,2)}/></label><button onClick={async()=>{try{await navigator.clipboard.writeText(JSON.stringify(agentSetup.configuration,null,2));setAgentCopied(true);}catch{setError('Clipboard access is unavailable. Select and copy the configuration above.');}}}>{agentCopied?'Configuration copied':'Copy configuration'}</button><p className="hint">Add this server in your agent client's MCP settings. This JSON layout is supported by compatible clients; other clients can use the command and arguments shown.</p><label className="field">Terminal executable<input readOnly value={agentSetup.cliPath}/></label><label className="field">Bundled agent skill<input readOnly value={agentSetup.skillPath}/></label><p className="hint">The terminal interface returns JSON; run the executable with --help. Agent and GUI workspaces are separate.</p></>}</section></div>}
   {drag&&<div className="drop-overlay">Drop to add files</div>}
  </div>;

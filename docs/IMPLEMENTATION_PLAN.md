@@ -24,7 +24,7 @@ Rust manages opaque IDs, queue states, progress/cancellation, verified cache, pr
 | 4. Everyday GUI | Implemented; GUI tests and ARM64 launch pass | Files/folders/drop, accessible controls, responsive queue, per-file outcomes |
 | 5. Comparison/report | Implemented; generated fixture checks pass | Actual output previews, measured color/alpha/timeline checks, JSON reports |
 | 6. Release qualification | Deferred external infrastructure; remaining device gates open | Clean minimum-OS install, offline runtime, upgrade/uninstall, signing checks |
-| 7. Publication | Gated; development artifacts only | Qualified GitHub installers, checksums, dependency source/notices and evidence |
+| 7. Publication | Public alpha preview authorized; stable publication gated | Three-target unsigned prerelease, checksums, matching source/notices and evidence; signed stable installers after qualification |
 
 ## Verification and release gates
 
@@ -37,6 +37,10 @@ External inputs: signing identity/credentials and access to a clean Windows 11 t
 ## Evidence and deviations
 
 ### Agent interface extension (authorized 2026-10-07)
+
+Public alpha extension (authorized 2026-10-07): publish v0.1.0-alpha.1 with all three native installers and permanent public agent-setup downloads. Add synchronized version tooling, tag-triggered native rebuild/test/publication, integrity/provenance checks, complete source/license-text material and honest preview release notes. Stable signing/minimum-OS/distribution gates remain open. Keep failed uploads in a draft and never overwrite published versions.
+
+External agent testing exercised generated image sweeps and FLAC studies with unchanged originals; its saved private evidence remains outside this repository/release. Feedback clarified terminal job-state documentation in the bundled guide (`ready`/`failed`/`canceled`, numeric `completed`, session `active`). Follow-up usability work: distinguish unsupported still-image input from video in probe errors, and expose explicit decoded-audio-equality diagnostics. Downloads permission/attachment materialization failures reported by that agent occurred before codec execution and do not establish a codec failure.
 
 Deliver an optional native MCP stdio server and JSON CLI using the existing Rust engine and bundled codecs. Include discoverable tool schemas and a portable compression-study skill. No model/account/API key belongs in this application. Agents choose formats/settings, run real studies, refine candidates, and export explicitly selected results; diagnostic scores do not establish perceptual equivalence.
 

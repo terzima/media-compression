@@ -2,7 +2,9 @@
 
 A local desktop app for compressing images and audio, inspecting actual candidates, and exporting without changing originals. macOS 14+ (Apple Silicon/Intel) and Windows 11 x64 are first-release targets.
 
-The development GUI implements presets, custom controls, real-data studies, comparisons and safe export. Native CI builds/tests Apple Silicon, Intel Mac and Windows x64, and uploads installers with checksums, source/notices and verification records. Unsigned artifacts are development candidates; signing and clean minimum-OS qualification are deferred. See [implementation milestones](docs/IMPLEMENTATION_PLAN.md) and [platform evidence](docs/RELEASE_QUALIFICATION.md).
+The GUI implements presets, custom controls, real-data studies, comparisons and safe export. [Download the alpha preview](https://github.com/terzima/media-compression/releases/tag/v0.1.0-alpha.1) for testing, with SHA256SUMS, matching source/notices and exact build evidence. Native CI builds/tests Apple Silicon, Intel Mac and Windows x64 before publication. Preview installers are unsigned development candidates; signing and clean minimum-OS qualification are deferred. See [implementation milestones](docs/IMPLEMENTATION_PLAN.md) and [platform evidence](docs/RELEASE_QUALIFICATION.md).
+
+This software uses FFmpeg under LGPL-2.1-or-later and separately executed pngquant/libimagequant under GPL terms. Their matching source is attached to each release. See [source rebuilding instructions](docs/SOURCE_BUILD.md); MIT licensing applies to project-authored code.
 
 ## Using the app
 
@@ -26,17 +28,17 @@ Copy and paste this request into an agent with local terminal and download acces
 Download, install if needed, and set up Media Compression for this agent.
 Official project: https://github.com/terzima/media-compression
 Installers: https://github.com/terzima/media-compression/releases
+First testing preview: https://github.com/terzima/media-compression/releases/tag/v0.1.0-alpha.1
 My media/export folder: [my media folder; ask me if unspecified].
 
 Detect my OS and CPU architecture. Reuse an installed app if its bundled
 media-compression-agent works. Otherwise download the matching official
 installer and verify its published SHA-256 before installing per-user.
-For testing, I accept an unsigned development build if no release is
-available: find a passing agent-enabled build through
-https://github.com/terzima/media-compression/pull/2 and obtain its matching
-candidate artifact, checksums and build evidence. Identify it as a
-development build. If downloads need login, an artifact has expired, or
-the OS requires my interaction, explain the exact remaining step. Do not
+For testing, I accept a published unsigned alpha preview. Obtain the
+matching installer, SHA256SUMS and release-manifest.json from the official
+release assets. Identify it as a development preview. If no suitable
+release is available or the OS requires my interaction, explain the
+exact remaining step. Do not
 disable OS protections or install development tools or replacement codecs.
 
 Find the bundled agent executable and read --help, guide, capabilities
@@ -51,7 +53,7 @@ Do not compress or export during setup; preserve my originals.
 
 You do not need to know shell commands or have the app downloaded first. Downloading needs internet access; installed compression runs locally. MCP needs a client that supports local stdio servers; terminal access is sufficient for the CLI fallback. An agent that cannot access your computer cannot install or run local software. Login, native permission dialogs, or a client reload may require your interaction; the agent should complete the available steps and explain what remains.
 
-**Current availability:** signed stable installers have not been published. Development installers come from successful GitHub Actions builds and may require GitHub sign-in to download. They are unsigned test candidates, with signing and clean minimum-OS qualification still deferred. The request explicitly accepts these for testing; remove that paragraph if you want only a published release. It must never claim setup succeeded when no suitable installer could be obtained.
+**Preview distribution:** public alpha release assets can be downloaded without GitHub sign-in. They are unsigned test candidates, with signing and clean minimum-OS qualification still deferred. The request explicitly accepts these for testing; replace that paragraph with a stable-only requirement if you prefer to wait for qualification. It must never claim setup succeeded when no suitable installer could be obtained.
 
 Once setup is complete, try: **“Study this file and show me the smallest candidates with good quality, explain the tradeoffs, and let me compare them before export.”** The agent measures real outputs and refines settings; lossy quality still depends on your requirements and visual/listening feedback.
 
@@ -68,17 +70,17 @@ Both interfaces use the same engine and bundled codecs. The connected agent has 
 
 ### Installer acquisition for agents
 
-Use only assets from this project's [Releases](https://github.com/terzima/media-compression/releases) or its own successful [Actions builds](https://github.com/terzima/media-compression/actions). Check macOS 14+ or Windows 11 x64 and select the native architecture. Prefer a published stable release. If none is available and the setup request accepts development builds, use an agent-enabled commit with successful native checks; [PR #2](https://github.com/terzima/media-compression/pull/2) records the agent extension's build evidence. Run [37700839336](https://github.com/terzima/media-compression/actions/runs/37700839336) at `b55da8ad3e6f33e31dbc11ba19bd4904fa70edd1` passed all three targets. Artifacts expire; this run is evidence, not a permanent download endpoint. Do not substitute an older desktop-only build or an artifact from a failed run.
+Use only this project's [Releases](https://github.com/terzima/media-compression/releases). Check macOS 14+ or Windows 11 x64 and select the native architecture. Prefer a stable release when available; the setup request also authorizes an unsigned public alpha preview. Use the explicit [first preview page](https://github.com/terzima/media-compression/releases/tag/v0.1.0-alpha.1) or list releases through the GitHub API and inspect `prerelease`, `draft`, assets and tag. GitHub's `/releases/latest` endpoint excludes prereleases; an absent latest stable release does not mean no preview exists. Match the installer to the platform entries in release-manifest.json.
 
-| Computer | Development artifact | Installer inside artifact |
-|---|---|---|
-| Apple Silicon Mac | `candidate-aarch64-apple-darwin` | DMG under `release/bundle/dmg/` |
-| Intel Mac | `candidate-x86_64-apple-darwin` | DMG under `release/bundle/dmg/` |
-| Windows x64 | `candidate-x86_64-pc-windows-msvc` | EXE under `release/bundle/nsis/` |
+| Computer | Public alpha.1 installer |
+|---|---|
+| Apple Silicon Mac | `Media-Compression_0.1.0-alpha.1_macos-arm64.dmg` |
+| Intel Mac | `Media-Compression_0.1.0-alpha.1_macos-x64.dmg` |
+| Windows x64 | `Media-Compression_0.1.0-alpha.1_windows-x64.exe` |
 
-GitHub may require an authenticated browser, connector or existing API session to download Actions artifacts. Do not ask the user to paste credentials into chat. If access or artifact expiry blocks acquisition, identify the exact required download or request a matching installer from the project owner; do not report the app installed or trigger an expensive source build. An agent without download access can continue once the user supplies the official installer and checksums.
+Download the matching installer, SHA256SUMS and release-manifest.json through their public release-asset links. Confirm the installer SHA-256/size match both records and identify the exact release tag/build commit. Checksums prove consistency with the release records, not signing or clean-device qualification. No GitHub account is needed to download public release assets. If the agent lacks download access, identify the exact asset the user must supply with its checksums; do not report installation success or trigger an expensive source build.
 
-Extract the selected artifact into a new temporary directory. Find `artifacts/installer-checksums.sha256`, `artifacts/build-evidence.json`, and `artifacts/installed-bundle-evidence.json`; verify the installer SHA-256 and matching commit/target. The checksum paths such as `dmg/<name>.dmg` are relative to the bundle directory, not the extracted artifact root. A matching checksum proves consistency with the downloaded build record; it does not establish a signed or qualified release.
+For internal testing only, Actions artifacts remain available with expiring downloads that may require GitHub access. [PR #2](https://github.com/terzima/media-compression/pull/2) records the original agent extension's successful native run. These artifacts use `candidate-<target>` names and contain installer checksums relative to `release/bundle/`, plus source/notices and build evidence. Public setup should use release assets instead.
 
 On macOS, verify/mount the DMG read-only, copy the entire app bundle to `~/Applications`, and unmount it. On Windows, run the per-user NSIS installer with its bundled offline WebView2. Preserve an existing installation; if an update requires closing the running GUI, retain unsaved work and explain that step before replacement. If an OS dialog requires interaction, report it accurately and let the user complete it; do not remove quarantine or change system security policy. Verify the installed helper's `--version` and discovery commands. Report the release tag or exact development commit and installer hash. Downloading, checksum validation, installation, helper execution and MCP discovery are separate outcomes; report only those actually verified.
 
@@ -110,6 +112,10 @@ node scripts/generate-fixtures.mjs     # generated demonstration files
 The desktop build wrapper defaults to CI-style DMG layout so it does not require Finder automation permission. Clear `.tools/native`, `.tools/patched-sys`, and staged helpers before auditing a fully clean codec rebuild. Lockfiles are committed; helpers/cache/artifacts are ignored. Build results do not substitute for signed clean-machine installation evidence.
 
 See [architecture](docs/ARCHITECTURE.md), [provenance](docs/PROVENANCE.md), and [project brief](docs/PROJECT_BRIEF.md).
+
+## Publishing another preview
+
+Run `node scripts/set-version.mjs 0.1.0-alpha.2`, make the changes, update release notes/setup download examples, run relevant checks, and commit the exact release source. Push an annotated tag with the matching version (`v0.1.0-alpha.2`). The native workflow rebuilds/tests all three targets, checks source/license material, validates installer/source hashes and installed-agent evidence, then stages a draft release. It publishes that draft as a prerelease only after every upload's hash/size is verified. A failed build or upload leaves no published partial release. Published versions are not overwritten; fixes use a new version. Stable tags do not trigger this unsigned-preview publication path. See [release procedure](docs/RELEASE_QUALIFICATION.md#public-alpha-previews).
 
 ## License
 
