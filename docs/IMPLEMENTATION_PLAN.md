@@ -24,7 +24,7 @@ Rust manages opaque IDs, queue states, progress/cancellation, verified cache, pr
 | 4. Everyday GUI | Implemented; GUI tests and ARM64 launch pass | Files/folders/drop, accessible controls, responsive queue, per-file outcomes |
 | 5. Comparison/report | Implemented; generated fixture checks pass | Actual output previews, measured color/alpha/timeline checks, JSON reports |
 | 6. Release qualification | Deferred external infrastructure; remaining device gates open | Clean minimum-OS install, offline runtime, upgrade/uninstall, signing checks |
-| 7. Publication | Gated; development artifacts only | Qualified GitHub installers, checksums, dependency source/notices and evidence |
+| 7. Publication | v0.1.0-alpha.1 published and public downloads verified; stable publication gated | Three-target unsigned prerelease, checksums, matching source/notices and evidence; signed stable installers after qualification |
 
 ## Verification and release gates
 
@@ -36,7 +36,17 @@ External inputs: signing identity/credentials and access to a clean Windows 11 t
 
 ## Evidence and deviations
 
+### Published alpha preview
+
+[v0.1.0-alpha.1](https://github.com/terzima/media-compression/releases/tag/v0.1.0-alpha.1) was published on 2026-10-08 at 00:59:14 UTC (2026-10-07 locally), from immutable commit `a3e0549a8b517881f71dd3c06c51da47caf77efd`. [Tag run 37708733501](https://github.com/terzima/media-compression/actions/runs/37708733501) passed all three native build/test/package/installed-bundle jobs and the publication job. The release includes three installers and 26 checksum, manifest, source, notice and evidence assets. Each uploaded asset's size and SHA-256 matched before publication.
+
+Unauthenticated HTTPS verification at 2026-10-08 01:01:05 UTC downloaded and hashed all three public installers, checked the release manifest and SHA256SUMS, and matched all 29 asset records to their server digests. No GitHub account was used. Exact installer hashes and remaining qualification limits are recorded in RELEASE_QUALIFICATION.md. Public downloads and CI installed-bundle checks do not establish clean macOS 14/Windows 11 installation or interactive playback on every target. The README includes a complete agent setup request for machines without a prior download; synchronized version tooling and alpha-tag automation support subsequent previews.
+
 ### Agent interface extension (authorized 2026-10-07)
+
+Public alpha extension (authorized 2026-10-07): publish v0.1.0-alpha.1 with all three native installers and permanent public agent-setup downloads. Add synchronized version tooling, tag-triggered native rebuild/test/publication, integrity/provenance checks, complete source/license-text material and honest preview release notes. Stable signing/minimum-OS/distribution gates remain open. Keep failed uploads in a draft and never overwrite published versions.
+
+External agent testing exercised generated image sweeps and FLAC studies with unchanged originals; its saved private evidence remains outside this repository/release. Feedback clarified terminal job-state documentation in the bundled guide (`ready`/`failed`/`canceled`, numeric `completed`, session `active`). Follow-up usability work: distinguish unsupported still-image input from video in probe errors, and expose explicit decoded-audio-equality diagnostics. Downloads permission/attachment materialization failures reported by that agent occurred before codec execution and do not establish a codec failure.
 
 Deliver an optional native MCP stdio server and JSON CLI using the existing Rust engine and bundled codecs. Include discoverable tool schemas and a portable compression-study skill. No model/account/API key belongs in this application. Agents choose formats/settings, run real studies, refine candidates, and export explicitly selected results; diagnostic scores do not establish perceptual equivalence.
 
@@ -45,6 +55,7 @@ Acceptance: capabilities/import/study/status/results/preview/cancel/export tools
 - Local extension checks: MCP discovery, real image/audio studies, preflight, inline preview, explicit export, cancellation and active-client-disconnect shutdown; CLI saved-study deduplication, aggressive quality, no-overwrite collisions and changed-source rejection; scoped paths and workspace ownership; 12 frontend tests, Rust workspace Clippy and all seven existing bundled-codec integration tests (including the 1,000-file batch). The portable study skill validates. Native installers include the agent executable and skill; each target runs installed-agent checks using bundled helper discovery.
 - ARM64 DMG at fd53e5e built from a clean tree and passed native dependency inspection and all four installed-agent interface tests. SHA-256: `b7a0f38774c11e5640a5c9f822d5f9998244969d08fe126b6f1682f0fc150268`. An isolated native QA app verified folder picking, bundled agent/skill paths, clipboard configuration, and Escape/focus restoration after picker return; the regression is covered by the GUI test. The final development build record and installer checksums supersede this initial artifact when rebuilt.
 - Final local ARM64 app at 7944c65 includes the keyboard fix; clean-tree DMG/native inspection/installed-agent checks pass. SHA-256: `832a67d9239d362608ef96e92dda5f1cb013e399b8c878775ab76a5363466db7`. README now provides a copy-and-paste agent setup request and concrete bootstrap steps. A fifth interface test verifies guide/capabilities/tool/config discovery as valid JSON without creating a workspace.
+- Initial agent setup handoff covered machines without a download or installation: official release/development artifact acquisition, native architecture selection, checksums/build records, per-user installation and verified MCP/CLI discovery. All three targets passed run [37700839336](https://github.com/terzima/media-compression/actions/runs/37700839336) at b55da8a. This predates the public alpha above; the initial Actions artifact access/expiry limits no longer apply to public release assets. OS interaction, signing and clean-machine qualification remain explicit limits. Documentation checks do not establish a fresh-machine installation test.
 
 - 2026-10-07: clean standalone repository confirmed; authorized implementation starts on `codex/desktop-v1`.
 - Upstream pins are resolved in committed lockfiles and SHA-256 source records. Glyph algorithms were reviewed and adapted as standalone code; no private media or app integrations were copied. See PROVENANCE.md and DEPENDENCIES.md.

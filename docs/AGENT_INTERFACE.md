@@ -4,7 +4,7 @@ The optional native `media-compression-agent` executable provides MCP stdio tool
 
 ## Connect an MCP client
 
-Users can paste the setup request from [the README](../README.md#set-it-up-with-your-agent) into a terminal-capable agent. The README gives the agent executable discovery, guide/schema loading, folder grants, client configuration and connection-verification steps; the CLI is the fallback when client setup is unavailable.
+Users can paste the setup request from [the README](../README.md#set-it-up-with-your-agent) into a terminal-capable agent, even before downloading the app. The README covers public preview installer acquisition, architecture/checksum/build verification, per-user installation, executable discovery, guide/schema loading, folder grants, client configuration and connection verification. Public release assets need no GitHub account; an unsigned build may need native OS interaction. Absent installers are reported honestly. The CLI is the fallback when client setup is unavailable.
 
 In the GUI, choose **Agent connection → Choose granted folder**. Copy the displayed configuration into your client's MCP settings. The generated command is the actual bundled executable; its arguments grant only the chosen folder. The JSON `mcpServers` layout is accepted by compatible clients; clients with another configuration format can use the same command/arguments. Multiple grants use repeated `--root` arguments.
 
@@ -27,6 +27,8 @@ Tools:
 | save_study | Save completed/canceled results for later CLI export without overwriting |
 
 Lossless selection can use verified decoded equality. Lossy selection needs the user's requirements and appropriate visual/listening feedback. Scores do not establish perceptual equivalence, percentages of people who cannot notice differences, or a universal optimum. Candidates are always encoded from originals; aggressive/larger outputs remain selectable.
+
+For asynchronous studies, track the IDs returned by start_study. Terminal job states are `ready` (one or more valid candidates), `failed` and `canceled`. `completed` is a numeric count of attempted settings, not a state. Inspect each job's errors and actual candidates even when its state is `ready`; partial failures are retained. Top-level `active=false` indicates no queued/running jobs remain in the session. Never poll for a nonexistent `completed` state.
 
 ## Terminal fallback
 

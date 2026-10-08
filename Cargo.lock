@@ -1996,7 +1996,7 @@ dependencies = [
 
 [[package]]
 name = "media-agent"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2013,7 +2013,7 @@ dependencies = [
 
 [[package]]
 name = "media-compression"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "media-engine",
  "rodio",
@@ -2027,7 +2027,7 @@ dependencies = [
 
 [[package]]
 name = "media-engine"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "anyhow",
  "fs2",

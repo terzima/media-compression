@@ -2,7 +2,9 @@
 
 A local desktop app for compressing images and audio, inspecting actual candidates, and exporting without changing originals. macOS 14+ (Apple Silicon/Intel) and Windows 11 x64 are first-release targets.
 
-The development GUI implements presets, custom controls, real-data studies, comparisons and safe export. Native CI builds/tests Apple Silicon, Intel Mac and Windows x64, and uploads installers with checksums, source/notices and verification records. Unsigned artifacts are development candidates; signing and clean minimum-OS qualification are deferred. See [implementation milestones](docs/IMPLEMENTATION_PLAN.md) and [platform evidence](docs/RELEASE_QUALIFICATION.md).
+The GUI implements presets, custom controls, real-data studies, comparisons and safe export. [Download the alpha preview](https://github.com/terzima/media-compression/releases/tag/v0.1.0-alpha.1) for testing, with SHA256SUMS, matching source/notices and exact build evidence. Native CI builds/tests Apple Silicon, Intel Mac and Windows x64 before publication. Preview installers are unsigned development candidates; signing and clean minimum-OS qualification are deferred. See [implementation milestones](docs/IMPLEMENTATION_PLAN.md) and [platform evidence](docs/RELEASE_QUALIFICATION.md).
+
+This software uses FFmpeg under LGPL-2.1-or-later and separately executed pngquant/libimagequant under GPL terms. Their matching source is attached to each release. See [source rebuilding instructions](docs/SOURCE_BUILD.md); MIT licensing applies to project-authored code.
 
 ## Using the app
 
@@ -20,27 +22,44 @@ The installed application bundles its codecs and needs no account, network, Pyth
 
 ## Set it up with your agent
 
-After installing the desktop app, copy and paste this request into your agent. Replace the bracketed folder with the folder containing your media and intended export locations:
+Copy and paste this request into an agent with local terminal and download access. It works whether or not you already have the app. Replace the bracketed folder with the folder containing your media and intended export locations, or let the agent ask for it:
 
 ```text
-Set up the installed Media Compression app for this agent. Find its bundled
-media-compression-agent executable and read --help, guide, capabilities and tools.
-Grant access only to [my media folder] using config --root. Prefer its local
-stdio MCP tools: configure this client while preserving existing servers,
-load the bundled compression-study skill, and verify tool discovery and
-compression_capabilities. If MCP cannot be configured or reloaded here, use
-its full-path JSON CLI and embedded guide instead. Tell me which interface
-is ready and which folder is granted. Do not compress or export files during
-setup; preserve my originals.
+Download, install if needed, and set up Media Compression for this agent.
+Official project: https://github.com/terzima/media-compression
+Installers: https://github.com/terzima/media-compression/releases
+First testing preview: https://github.com/terzima/media-compression/releases/tag/v0.1.0-alpha.1
+My media/export folder: [my media folder; ask me if unspecified].
+
+Detect my OS and CPU architecture. Reuse an installed app if its bundled
+media-compression-agent works. Otherwise download the matching official
+installer and verify its published SHA-256 before installing per-user.
+For testing, I accept a published unsigned alpha preview. Obtain the
+matching installer, SHA256SUMS and release-manifest.json from the official
+release assets. Identify it as a development preview. If no suitable
+release is available or the OS requires my interaction, explain the
+exact remaining step. Do not
+disable OS protections or install development tools or replacement codecs.
+
+Find the bundled agent executable and read --help, guide, capabilities
+and tools. Grant only my specified folders using config --root. Prefer
+local stdio MCP: preserve existing client servers, load the bundled study
+skill where supported, and verify tool discovery and compression_capabilities.
+If MCP cannot be configured or reloaded here, use the full-path JSON CLI
+and embedded guide, and verify capabilities and tools. Report the installed
+version/build, executable path, active interface and granted folders.
+Do not compress or export during setup; preserve my originals.
 ```
 
-Your agent needs local terminal access to this computer and, for MCP, a client that supports local stdio servers. This request is self-contained and does not require the agent to fetch a GitHub page. You do not need to know shell commands. If you leave the folder unspecified, the agent should ask which folder to use. Setup does not start compression or export. During development, these instructions apply to a build containing the agent extension; signed stable installers remain a release gate.
+You do not need to know shell commands or have the app downloaded first. Downloading needs internet access; installed compression runs locally. MCP needs a client that supports local stdio servers; terminal access is sufficient for the CLI fallback. An agent that cannot access your computer cannot install or run local software. Login, native permission dialogs, or a client reload may require your interaction; the agent should complete the available steps and explain what remains.
+
+**Preview distribution:** public alpha release assets can be downloaded without GitHub sign-in. They are unsigned test candidates, with signing and clean minimum-OS qualification still deferred. The request explicitly accepts these for testing; replace that paragraph with a stable-only requirement if you prefer to wait for qualification. It must never claim setup succeeded when no suitable installer could be obtained.
 
 Once setup is complete, try: **“Study this file and show me the smallest candidates with good quality, explain the tradeoffs, and let me compare them before export.”** The agent measures real outputs and refines settings; lossy quality still depends on your requirements and visual/listening feedback.
 
 ### Setup instructions for agents
 
-1. Find the installed `media-compression-agent` executable. On macOS, check `/Applications/Media Compression.app/Contents/MacOS/` and `~/Applications/Media Compression.app/Contents/MacOS/`. On Windows, locate the installed GUI via its per-user uninstall record or the user's installation path; `media-compression-agent.exe` is beside the GUI executable. Use the full executable path and argument arrays. If the app or agent helper is missing, explain the missing installation/build and help locate a suitable installer; do not install development tools or replacement codecs as a setup workaround.
+1. Detect the native OS/architecture and look for an installed `media-compression-agent`. On macOS, check `/Applications/Media Compression.app/Contents/MacOS/` and `~/Applications/Media Compression.app/Contents/MacOS/`. On Windows, locate the GUI via its per-user uninstall record or the user's installation path; `media-compression-agent.exe` is beside it. Test the helper's discovery commands before replacing a working copy. If the app/helper is missing, follow [installer acquisition](#installer-acquisition-for-agents), then resume discovery. Use full executable paths and argument arrays. Do not build from source, install developer tools, or add replacement codecs as an end-user setup workaround.
 2. Run the executable with `--help`, then `guide`, `capabilities` and `tools`. Read the returned study instructions and schemas. No workspace, media import, account, model or API key is needed for these discovery commands.
 3. Resolve the folder specified by the user and run `config --root <absolute-folder>`. Grant only the requested folders; repeat `--root` when multiple folders are authorized. If no folder was identified, ask for it. The GUI's **Agent connection → Choose granted folder → Copy configuration** provides the equivalent configuration and the bundled skill path.
 4. If this client supports local MCP configuration, add the generated executable/arguments using its documented configuration format, preserve existing servers, and load or install the bundled `media-compression` skill through the client's supported mechanism when available. The MCP server already includes the skill in its instructions. Keep the server local over stdio. Do not add cloud services, credentials, or arbitrary folders. Restart/reload the connection if the client requires it, and distinguish that step from completed setup.
@@ -48,6 +67,22 @@ Once setup is complete, try: **“Study this file and show me the smallest candi
 6. Report the active interface and granted folders. Keep setup separate from media processing. For a later compression request, use the guide to run real candidate studies from originals, show exact bytes/settings/diagnostics and meaningful tradeoffs, and export only the selections authorized by the user. Agent and GUI studies use separate workspaces; outputs can be opened normally.
 
 Both interfaces use the same engine and bundled codecs. The connected agent has its own model/data policies; this app supplies local compression tools. See [tool schemas, JSON requests and workspace details](docs/AGENT_INTERFACE.md). The GUI remains independently usable.
+
+### Installer acquisition for agents
+
+Use only this project's [Releases](https://github.com/terzima/media-compression/releases). Check macOS 14+ or Windows 11 x64 and select the native architecture. Prefer a stable release when available; the setup request also authorizes an unsigned public alpha preview. Use the explicit [first preview page](https://github.com/terzima/media-compression/releases/tag/v0.1.0-alpha.1) or list releases through the GitHub API and inspect `prerelease`, `draft`, assets and tag. GitHub's `/releases/latest` endpoint excludes prereleases; an absent latest stable release does not mean no preview exists. Match the installer to the platform entries in release-manifest.json.
+
+| Computer | Public alpha.1 installer |
+|---|---|
+| Apple Silicon Mac | `Media-Compression_0.1.0-alpha.1_macos-arm64.dmg` |
+| Intel Mac | `Media-Compression_0.1.0-alpha.1_macos-x64.dmg` |
+| Windows x64 | `Media-Compression_0.1.0-alpha.1_windows-x64.exe` |
+
+Download the matching installer, SHA256SUMS and release-manifest.json through their public release-asset links. Confirm the installer SHA-256/size match both records and identify the exact release tag/build commit. Checksums prove consistency with the release records, not signing or clean-device qualification. No GitHub account is needed to download public release assets. If the agent lacks download access, identify the exact asset the user must supply with its checksums; do not report installation success or trigger an expensive source build.
+
+For internal testing only, Actions artifacts remain available with expiring downloads that may require GitHub access. [PR #2](https://github.com/terzima/media-compression/pull/2) records the original agent extension's successful native run. These artifacts use `candidate-<target>` names and contain installer checksums relative to `release/bundle/`, plus source/notices and build evidence. Public setup should use release assets instead.
+
+On macOS, verify/mount the DMG read-only, copy the entire app bundle to `~/Applications`, and unmount it. On Windows, run the per-user NSIS installer with its bundled offline WebView2. Preserve an existing installation; if an update requires closing the running GUI, retain unsaved work and explain that step before replacement. If an OS dialog requires interaction, report it accurately and let the user complete it; do not remove quarantine or change system security policy. Verify the installed helper's `--version` and discovery commands. Report the release tag or exact development commit and installer hash. Downloading, checksum validation, installation, helper execution and MCP discovery are separate outcomes; report only those actually verified.
 
 ## Development
 
@@ -77,6 +112,10 @@ node scripts/generate-fixtures.mjs     # generated demonstration files
 The desktop build wrapper defaults to CI-style DMG layout so it does not require Finder automation permission. Clear `.tools/native`, `.tools/patched-sys`, and staged helpers before auditing a fully clean codec rebuild. Lockfiles are committed; helpers/cache/artifacts are ignored. Build results do not substitute for signed clean-machine installation evidence.
 
 See [architecture](docs/ARCHITECTURE.md), [provenance](docs/PROVENANCE.md), and [project brief](docs/PROJECT_BRIEF.md).
+
+## Publishing another preview
+
+Run `node scripts/set-version.mjs 0.1.0-alpha.2`, make the changes, update release notes/setup download examples, run relevant checks, and commit the exact release source. Push an annotated tag with the matching version (`v0.1.0-alpha.2`). The native workflow rebuilds/tests all three targets, checks source/license material, validates installer/source hashes and installed-agent evidence, then stages a draft release. It publishes that draft as a prerelease only after every upload's hash/size is verified. A failed build or upload leaves no published partial release. Published versions are not overwritten; fixes use a new version. Stable tags do not trigger this unsigned-preview publication path. See [release procedure](docs/RELEASE_QUALIFICATION.md#public-alpha-previews).
 
 ## License
 
