@@ -3,10 +3,14 @@ use media_engine::{Engine, Settings, Snapshot, Tools};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
+    collections::HashMap,
     fs,
     io::{Read, Write},
     path::{Component, Path, PathBuf},
-    sync::Arc,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, MutexGuard,
+    },
     time::Duration,
 };
 
@@ -122,6 +126,10 @@ pub struct Session {
     pub engine: Arc<Engine>,
     pub scope: Scope,
     inputs: std::sync::Mutex<Vec<PathBuf>>,
+    pub(crate) workspace: PathBuf,
+    operation: Mutex<()>,
+    pub(crate) folder_active: AtomicBool,
+    pub(crate) folder_canceled: AtomicBool,
 }
 impl Session {
     pub fn new(workspace: PathBuf, scope: Scope, tools: Tools) -> Result<Self> {
@@ -154,9 +162,14 @@ impl Session {
             engine,
             scope,
             inputs: std::sync::Mutex::new(Vec::new()),
+            workspace,
+            operation: Mutex::new(()),
+            folder_active: AtomicBool::new(false),
+            folder_canceled: AtomicBool::new(false),
         })
     }
     pub fn import(&self, paths: Vec<PathBuf>) -> Result<()> {
+        let _operation = self.operation()?;
         if paths.is_empty() {
             bail!("Provide at least one input path");
         }
@@ -178,11 +191,13 @@ impl Session {
         snapshot_json(self.engine.snapshot())
     }
     pub fn active(&self) -> bool {
-        self.engine
-            .snapshot()
-            .jobs
-            .iter()
-            .any(|j| ["queued", "processing"].contains(&j.state.as_str()))
+        self.folder_active.load(Ordering::SeqCst)
+            || self
+                .engine
+                .snapshot()
+                .jobs
+                .iter()
+                .any(|j| ["queued", "processing"].contains(&j.state.as_str()))
     }
     pub async fn wait(&self) {
         while self.active() {
@@ -190,6 +205,7 @@ impl Session {
         }
     }
     pub fn save(&self, path: &Path) -> Result<Value> {
+        let _operation = self.operation()?;
         if self.active() {
             bail!("Wait for processing or cancellation to finish before saving the study");
         }
@@ -225,6 +241,7 @@ impl Session {
         Ok(json!({"schemaVersion":1,"manifest":path}))
     }
     pub fn export(&self, ids: Vec<String>, destination: &Path, report: bool) -> Result<Value> {
+        let _operation = self.operation()?;
         if ids.is_empty() {
             bail!("Select at least one candidate ID");
         }
@@ -238,9 +255,20 @@ impl Session {
             self.scope.path(&media.path)?;
         }
         let destination = self.scope.path(destination)?;
+        let prior_exports: HashMap<_, _> = snapshot
+            .media
+            .iter()
+            .flat_map(|m| &m.candidates)
+            .map(|c| (c.id.clone(), c.exported.len()))
+            .collect();
         let result = self.engine.export(&ids, &destination, report);
-        let mut value = self.snapshot();
+        let after = self.engine.snapshot();
+        let exports: Vec<_> = after.media.iter().flat_map(|m| &m.candidates).filter(|c| ids.contains(&c.id)).flat_map(|c| {
+            c.exported.iter().skip(prior_exports.get(&c.id).copied().unwrap_or(0)).map(|relative| json!({"candidateId":c.id,"path":destination.join(relative),"bytes":c.bytes,"sha256":c.sha256}))
+        }).collect();
+        let mut value = snapshot_json(after);
         value["destination"] = json!(destination);
+        value["exports"] = json!(exports);
         value["exportError"] = result
             .err()
             .map(|e| json!(format!("{e:#}")))
@@ -302,7 +330,7 @@ impl Session {
             }
         }
         if !jobs.is_empty() {
-            self.engine.start(jobs.into_iter().collect())?;
+            self.start(jobs.into_iter().collect())?;
             self.wait().await;
         }
         let snapshot = self.engine.snapshot();
@@ -336,10 +364,27 @@ impl Session {
         result["restoreErrors"] = json!(errors);
         Ok(result)
     }
+    pub(crate) fn operation(&self) -> Result<MutexGuard<'_, ()>> {
+        self.operation.try_lock().map_err(|_| {
+            anyhow::anyhow!(
+                "Another import, export or folder operation is active; wait before changing this session"
+            )
+        })
+    }
+    pub fn start(&self, items: Vec<(String, Vec<Settings>)>) -> Result<Vec<String>> {
+        let _operation = self.operation()?;
+        self.engine.start(items)
+    }
+    pub fn cancel(&self, id: Option<&str>) {
+        if id.is_none() {
+            self.folder_canceled.store(true, Ordering::SeqCst);
+        }
+        self.engine.cancel(id);
+    }
 }
 impl Drop for Session {
     fn drop(&mut self) {
-        self.engine.cancel(None);
+        self.cancel(None);
     }
 }
 
@@ -393,19 +438,22 @@ pub struct Manifest {
 }
 
 pub fn has_errors(value: &Value) -> bool {
-    value["media"].as_array().is_some_and(|a| {
-        a.iter().any(|m| {
-            !m["error"].is_null()
-                || m["candidates"].as_array().is_some_and(|c| {
-                    c.iter()
-                        .any(|v| v["exportErrors"].as_array().is_some_and(|e| !e.is_empty()))
-                })
+    value["errors"].as_array().is_some_and(|a| !a.is_empty())
+        || value["media"].as_array().is_some_and(|a| {
+            a.iter().any(|m| {
+                !m["error"].is_null()
+                    || m["candidates"].as_array().is_some_and(|c| {
+                        c.iter()
+                            .any(|v| v["exportErrors"].as_array().is_some_and(|e| !e.is_empty()))
+                    })
+            })
         })
-    }) || value["jobs"].as_array().is_some_and(|a| {
-        a.iter().any(|j| {
-            j["errors"].as_array().is_some_and(|e| !e.is_empty()) || j["state"] == "canceled"
+        || value["jobs"].as_array().is_some_and(|a| {
+            a.iter().any(|j| {
+                j["errors"].as_array().is_some_and(|e| !e.is_empty()) || j["state"] == "canceled"
+            })
         })
-    }) || !value["exportError"].is_null()
+        || !value["exportError"].is_null()
         || value["restoreErrors"]
             .as_array()
             .is_some_and(|a| !a.is_empty())

@@ -74,6 +74,9 @@ evidence.checks.push('Installed agent passed MCP discovery/studies/preview/cance
 const skill=await find(destination,'SKILL.md');
 if(!skill||!(await readFile(skill,'utf8')).includes('name: media-compression'))throw Error('Bundled agent skill missing');
 evidence.checks.push('Agent study skill is included in the installer');
+const recipes=path.join(path.dirname(skill),'recipes.json');
+if(await hash(recipes)!==await hash(path.resolve('agent-plugin/skills/media-compression/recipes.json')))throw Error('Bundled recipe book differs from source');
+evidence.checks.push('Matching image/audio recipe book is included; installed CLI/MCP recipe discovery passed interface checks');
 // CI launch smoke does not imply an interactive comparison or clean-machine test.
 if(process.env.MEDIA_INSTALL_LAUNCH==='1'){
   const child=spawn(application,[],{stdio:'ignore'});

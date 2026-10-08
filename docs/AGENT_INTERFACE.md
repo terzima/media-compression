@@ -12,11 +12,15 @@ On macOS the installed executable is inside `Media Compression.app/Contents/MacO
 
 The `agent-plugin/skills/media-compression/SKILL.md` skill is also embedded in server instructions. It describes actual-study refinement, metric limitations, explicit export selection, source preservation and partial failures. This is a portable MCP/skill bundle, not an already-installed client plugin or marketplace publication. Client setup is the only connection step; ordinary users can keep using the GUI without it.
 
+The development guide also supports conversational intake: ask only for missing file/output access and the choice between exact preservation and visually similar lossy copies, translate the answer into tools, and complete authorized exports. The user's existing agent client supplies the model; subscription access alone does not give a client local tool support. See [plain-language requests and the GUI study walkthrough](USER_GUIDE.md). No universal SSIM threshold or automatic perceptual-quality target is introduced.
+
 Tools:
 
 | Tool | Purpose |
 |---|---|
 | compression_capabilities | Supported settings, codec constraints, limits and granted folders |
+| compression_recipes | Read-only image/audio recipe catalog; optional recipeId selects one plus execution guidance |
+| compress_folder | One-call preset compression and verified export of a mixed folder; lossless/smaller/both |
 | import_media / list_media | Inspect file/folder inputs, paginate IDs/properties/errors |
 | plan_study | Validate proposed settings and disclose encode count/rate conversions without processing |
 | start_study / job_status | Start bounded background work and read progress/outcomes |
@@ -39,11 +43,38 @@ media-compression-agent --help
 media-compression-agent capabilities
 media-compression-agent tools
 media-compression-agent guide
+media-compression-agent recipes
+media-compression-agent recipes audio-exact
 media-compression-agent config --root /media
 media-compression-agent inspect /media/image.png --root /media
+media-compression-agent compress-folder /media/photos --mode both --root /media
 media-compression-agent study --input /media/request.json --manifest /media/study.json --root /media
 media-compression-agent export --input /media/export-request.json --root /media
 ```
+
+## Automatic folder workflow
+
+For other goals, use the [recipe book](RECIPES.md): the same versioned JSON catalog is embedded in CLI/MCP and bundled beside the portable skill. Discovery does not start an engine or touch media. Recipes supply concrete settings variants, conditions and MCP/CLI execution steps; they do not introduce automatic perceptual-quality targets. Both recipe discovery and the folder command are extensions after alpha.1.
+
+Development extension after alpha.1: `compress-folder` / `compress_folder`. The published alpha.1 does not yet include it; check the installed executable's tools/help before use. No release is replaced by this extension.
+
+```sh
+media-compression-agent compress-folder /media/photos --mode both --root /media
+# Optional output parent (must also be granted):
+media-compression-agent compress-folder /media/photos --mode lossless --destination /media/output --root /media
+```
+
+MCP equivalent: `compress_folder({"path":"/media/photos","mode":"both"})`. Default `mode` is `lossless`; `smaller` explicitly permits a lossy preset. These operations perform recursive import, deterministic settings, bounded encoding, verified candidate selection and export internally, returning JSON with per-policy totals, absolute per-file paths, hashes, settings/diagnostics, copied-original reasons, skipped entries, elapsed time and partial errors. There is no mandatory report file or saved study. The call waits; its timeout must cover actual codec work. Concurrent MCP `job_status` can observe activity and `cancel_study` with no job ID cancels the folder operation, including import and staged copying. Other session mutations fail while it runs. CLI Ctrl-C returns 130; partial file failures return 2 and retain successful outputs.
+
+| Policy | Images | Audio |
+|---|---|---|
+| Lossless | WebP lossless effort 4; PNG effort 2 for supported high precision/gray-profile sources | FLAC level 5 for supported 16-/24-bit integer sources |
+| Smaller | WebP quality 90, effort 4, exact alpha | AAC-LC 192 kbps stereo / 96 kbps mono, preserving supported source rate |
+| Both | Run each narrow preset; Smaller reuses the verified lossless result when smaller | Run each narrow preset; Smaller reuses the verified lossless result when smaller |
+
+Output subfolders are `Lossless` and/or `Smaller` beneath the source folder or requested destination. Nested input paths remain nested; both sets share source basenames with the existing `-compressed` suffix, codec-specific extension and numbered collisions. Originals are copied if the preset cannot preserve required precision/profile/rate or if the candidate is not smaller; their bytes and metadata remain intact. Compressed copies follow normal metadata rules. Failed imports/encodes/exports remain visible; unaffected files continue. Only supported extensions are imported; other files and links/junctions are reported as skipped. Directories named Lossless/Smaller (case-insensitive, at any depth), the active cache and a separate nested destination are excluded on subsequent runs. Reserved folder names are intentional exclusions, even if populated independently. An output folder may not be a link/junction.
+
+The engine verifies oriented/color-managed image equality for lossless candidates, preserves dimensions and alpha, and verifies FLAC decoded samples; `samplesIdentical` exposes the existing audio check. Source/output hashes and staged-copy hashes are checked before committing exports. Verified content/settings/tool caches avoid repeating identical encodes. This is a fast preset workflow, not an optimum search or a guarantee of invisible loss. Studies and GUI comparisons remain available for user-requested refinement. Access/network/Library integrations are separate from local folder output.
 
 Study request (quality controls are encoder settings):
 
@@ -73,6 +104,10 @@ Export request:
 ```
 
 Later export imports only the selected source files, restores their folder-relative names, verifies original hashes, and regenerates/verifies selected candidates using current bundled codecs and verified caches. Unchanged originals are required. Missing/changed sources or candidate hash differences are reported; unaffected selected files can still export. Manifests contain private local paths and are not sanitized public reports. A manually edited manifest cannot direct the engine to copy an arbitrary candidate path.
+
+In the recipe-book development update, CLI/MCP export responses add `exports`: successful exports from this call only, each with `candidateId`, absolute `path`, `bytes` and `sha256`. Use these paths to return/open images and audio, including successful files beside partial failures. Candidate `exported` lists remain historical relative filenames; they must not be treated as absolute paths or attributed to the current destination after multiple exports. Older helpers return `destination` and relative filenames; track that operation's additions before resolving paths.
+
+IDs are opaque and session-local. CLI export accepts IDs from the saved study, then reopens/regenerates candidates; returned candidate IDs belong to its current snapshot and may differ from manifest IDs. Use hashes/settings to associate study results across sessions and use the returned absolute paths to deliver files.
 
 Data commands return versioned JSON on stdout; failures return JSON on stderr. MCP reserves stdout for protocol messages. Exit codes: 0 success, 1 invalid request/runtime failure, 2 partial file failure, 130 interrupted. `--input -` reads JSON from stdin. Input/manifest JSON is limited to 64 MiB; encoder settings use the engine's bounds. Ctrl-C cancels work; completed study candidates can be saved for later export.
 
