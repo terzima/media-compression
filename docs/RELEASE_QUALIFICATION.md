@@ -1,6 +1,6 @@
 # Release qualification
 
-Current status: development candidate, not a stable release. Evidence applies to the exact recorded commit/artifact. A build does not establish installation, playback, minimum-OS compatibility, signing or reputation.
+Current status: public unsigned alpha testing preview; stable qualification remains open. Evidence applies to the exact recorded commit/artifact. A build does not establish installation, playback, minimum-OS compatibility, signing or reputation.
 
 ## Public alpha previews
 
@@ -9,6 +9,20 @@ The owner authorized publishing an unsigned `v0.1.0-alpha.1` testing preview on 
 Alpha publication is triggered only by matching `vX.Y.Z-alpha.N` tags. All three native builds/tests must pass. Before uploading, the release assembler verifies exact commit/target, clean build records, synchronized manifest versions, installer/source hashes, native dependency and installed helper/agent/desktop evidence, and distribution material. Each installer is accompanied by per-target source/notices/evidence, the tagged project source, release-manifest.json and SHA256SUMS. Draft publication occurs only after every asset is uploaded and its server-reported digest/size matches; existing published versions are never replaced. If a run fails, correct the problem and rerun an unpublished draft only when its existing material still matches, or use a new version.
 
 Release notes must state the unsigned/ad-hoc status, incomplete minimum-OS/interactive device and upgrade/uninstall qualification, observed WebView2 signature limitations and absence of an automatic updater. Public downloads need no GitHub account; an OS may still require user interaction or block unsigned code. The workflow does not disable OS protections or infer runtime success from a successful download. Stable signing/platform/distribution gates below remain required.
+
+### Published v0.1.0-alpha.1 evidence
+
+[Public release](https://github.com/terzima/media-compression/releases/tag/v0.1.0-alpha.1), published 2026-10-08 00:59:14 UTC (2026-10-07 locally), commit `a3e0549a8b517881f71dd3c06c51da47caf77efd`. [Tag run 37708733501](https://github.com/terzima/media-compression/actions/runs/37708733501) passed Apple Silicon Mac, Intel Mac and Windows x64 native checks, including installed helper/agent studies and desktop launch smoke, then the publication job. The release contains 29 explicit assets: three installers, tagged project source, per-target matching dependency source/notices/evidence, release notes, a manifest and SHA256SUMS. Published versions remain immutable.
+
+| Installer | Bytes | SHA-256 |
+|---|---:|---|
+| `Media-Compression_0.1.0-alpha.1_macos-arm64.dmg` | 12,426,751 | `23a7bdd95cdf7bf8a0a5d8cadbaa2d0b9015345177aea8f705f49c7195de82e1` |
+| `Media-Compression_0.1.0-alpha.1_macos-x64.dmg` | 13,029,423 | `3480dd2c8ef434320e3d86afc34cdbeb59b6860b776ef23e18376119e4cd0d5c` |
+| `Media-Compression_0.1.0-alpha.1_windows-x64.exe` | 223,366,872 | `6e3004011da640c3dc41e4c977be7e445b14d848b7c3cc6474b25abbee27dda9` |
+
+At 2026-10-08 01:01:05 UTC, a separate unauthenticated HTTPS check downloaded and hashed all three installers, fetched the public manifest and SHA256SUMS, and matched all 29 asset entries with GitHub's server-reported digests/sizes. This verifies public acquisition without a GitHub account; it does not establish fresh-machine installation or OS trust.
+
+Source packaging checks license declarations/texts for 480 Rust packages, ten pinned native source archives and 43 pinned upstream license supplements. FFmpeg GPL/nonfree features are disabled, native license/build records accompany sources, and rebuilding/relinking instructions are included. These automated packaging checks do not replace broader legal/patent/distribution review for stable qualification. Mac CI uses macOS 15 and Windows CI uses Server 2025; clean minimum-OS installation, interactive Intel/Windows playback, signing/notarization, quarantine/SmartScreen, upgrade/uninstall and WebView2 signature qualification remain open.
 
 ## Observed evidence (2026-10-07)
 
@@ -19,7 +33,7 @@ Release notes must state the unsigned/ad-hoc status, incomplete minimum-OS/inter
 - Native run [37686691317](https://github.com/terzima/media-compression/actions/runs/37686691317) at c5911c2 passed all three targets: frontend/native/real-codec tests including Unicode JPEG paths, Clippy, matching source/notices, DMG/NSIS packaging, dependency inspection, installed-copy image/audio studies and five-second desktop launch smoke. Mac hosts run macOS 15; the Windows runner is Windows Server 2025, not a clean Windows 11 machine. CI PCM preparation and launch smoke do not establish interactive playback on Intel/Windows. Unsuccessful/canceled jobs do not establish installation/runtime qualification.
 - Windows embedded offline WebView2 input from the recorded Microsoft distribution URL has file/product version `1.3.275.13` and SHA-256 `ac22ecdc19c5b88b87f3fa752c00da9541653a8f5c0c5fc4a3b2b6ebe6591f69`. Its Authenticode inspection returned no status/signer; it is unqualified, not confirmed valid or invalid. Inspection errors are preserved in subsequent provenance records. Publisher/signature assessment remains required before stable distribution.
 - The final local ARM64 DMG at 6676460 has SHA-256 `085cc38615558c50868550818e6314bdb68929baf3189988f8697256c6eb1d93`; native dependency inspection and installed-copy codec studies pass. Its JSON build record confirms a clean source tree at build time. The app is copied to ~/Applications; existing comparison sessions were left running. Quit an earlier public preview before launching the updated copy because the backend locks its workspace against concurrent instances.
-- Matching dependency source, vendor trees, a dependency manifest/notices, and a checksummed source tarball were generated locally. The packaged bundle contains native notices and dependency license resources. Final archive/source compliance audit remains a publication gate.
+- Matching dependency source, vendor trees, a dependency manifest/notices, and a checksummed source tarball were generated locally. The packaged bundle contains native notices and dependency license resources. The subsequent alpha release above passes source packaging checks and publishes this material; broader distribution review remains a stable qualification gate.
 
 No clean Windows 11, minimum macOS 14, upgrade/uninstall, Gatekeeper quarantine or SmartScreen result has been claimed. No Developer ID Application identity is available on this machine. Current artifacts are unsigned/ad-hoc development builds, not notarized/stapled releases.
 
