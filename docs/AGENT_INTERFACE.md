@@ -17,6 +17,7 @@ Tools:
 | Tool | Purpose |
 |---|---|
 | compression_capabilities | Supported settings, codec constraints, limits and granted folders |
+| compress_folder | One-call preset compression and verified export of a mixed folder; lossless/smaller/both |
 | import_media / list_media | Inspect file/folder inputs, paginate IDs/properties/errors |
 | plan_study | Validate proposed settings and disclose encode count/rate conversions without processing |
 | start_study / job_status | Start bounded background work and read progress/outcomes |
@@ -41,9 +42,32 @@ media-compression-agent tools
 media-compression-agent guide
 media-compression-agent config --root /media
 media-compression-agent inspect /media/image.png --root /media
+media-compression-agent compress-folder /media/photos --mode both --root /media
 media-compression-agent study --input /media/request.json --manifest /media/study.json --root /media
 media-compression-agent export --input /media/export-request.json --root /media
 ```
+
+## Automatic folder workflow
+
+Development extension after alpha.1: `compress-folder` / `compress_folder`. The published alpha.1 does not yet include it; check the installed executable's tools/help before use. No release is replaced by this extension.
+
+```sh
+media-compression-agent compress-folder /media/photos --mode both --root /media
+# Optional output parent (must also be granted):
+media-compression-agent compress-folder /media/photos --mode lossless --destination /media/output --root /media
+```
+
+MCP equivalent: `compress_folder({"path":"/media/photos","mode":"both"})`. Default `mode` is `lossless`; `smaller` explicitly permits a lossy preset. These operations perform recursive import, deterministic settings, bounded encoding, verified candidate selection and export internally, returning JSON with per-policy totals, absolute per-file paths, hashes, settings/diagnostics, copied-original reasons, skipped entries, elapsed time and partial errors. There is no mandatory report file or saved study. The call waits; its timeout must cover actual codec work. Concurrent MCP `job_status` can observe activity and `cancel_study` with no job ID cancels the folder operation, including import and staged copying. Other session mutations fail while it runs. CLI Ctrl-C returns 130; partial file failures return 2 and retain successful outputs.
+
+| Policy | Images | Audio |
+|---|---|---|
+| Lossless | WebP lossless effort 4; PNG effort 2 for supported high precision/gray-profile sources | FLAC level 5 for supported 16-/24-bit integer sources |
+| Smaller | WebP quality 90, effort 4, exact alpha | AAC-LC 192 kbps stereo / 96 kbps mono, preserving supported source rate |
+| Both | Run each of the two narrow presets | Run each of the two narrow presets |
+
+Output subfolders are `Lossless` and/or `Smaller` beneath the source folder or requested destination. Nested input paths remain nested; both sets share source basenames with the existing `-compressed` suffix, codec-specific extension and numbered collisions. Originals are copied if the preset cannot preserve required precision/profile/rate or if the candidate is not smaller; their bytes and metadata remain intact. Compressed copies follow normal metadata rules. Failed imports/encodes/exports remain visible; unaffected files continue. Only supported extensions are imported; other files and links/junctions are reported as skipped. Directories named Lossless/Smaller (case-insensitive, at any depth), the active cache and a separate nested destination are excluded on subsequent runs. Reserved folder names are intentional exclusions, even if populated independently. An output folder may not be a link/junction.
+
+The engine verifies oriented/color-managed image equality for lossless candidates, preserves dimensions and alpha, and verifies FLAC decoded samples; `samplesIdentical` exposes the existing audio check. Source/output hashes and staged-copy hashes are checked before committing exports. Verified content/settings/tool caches avoid repeating identical encodes. This is a fast preset workflow, not an optimum search or a guarantee of invisible loss. Studies and GUI comparisons remain available for user-requested refinement. Access/network/Library integrations are separate from local folder output.
 
 Study request (quality controls are encoder settings):
 

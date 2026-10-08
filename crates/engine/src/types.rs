@@ -36,6 +36,8 @@ pub struct Diagnostics {
     pub alpha_max_error: Option<u8>,
     pub alpha_mean_error: Option<f64>,
     pub pixel_identical: Option<bool>,
+    #[serde(default)]
+    pub samples_identical: Option<bool>,
     pub duration_delta: Option<f64>,
     pub notices: Vec<String>,
 }

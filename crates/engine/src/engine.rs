@@ -49,7 +49,7 @@ pub struct Engine {
 pub fn hash_file(path: &Path) -> Result<String> {
     hash_file_cancelable(path, &AtomicBool::new(false))
 }
-fn hash_file_cancelable(path: &Path, cancel: &AtomicBool) -> Result<String> {
+pub fn hash_file_cancelable(path: &Path, cancel: &AtomicBool) -> Result<String> {
     let mut input = File::open(path)?;
     let mut hash = Sha256::new();
     let mut buf = [0u8; 65536];
@@ -166,11 +166,19 @@ impl Engine {
         (self.notify)();
     }
     pub fn import(&self, paths: Vec<PathBuf>) -> Result<()> {
-        self.import_with_roots(paths, None)
+        self.import_with_roots(paths, None, &AtomicBool::new(false))
     }
     /// Agent imports check each discovered file before hashing or probing it.
     pub fn import_scoped(&self, paths: Vec<PathBuf>, roots: &[PathBuf]) -> Result<()> {
-        self.import_with_roots(paths, Some(roots))
+        self.import_with_roots(paths, Some(roots), &AtomicBool::new(false))
+    }
+    pub fn import_scoped_cancelable(
+        &self,
+        paths: Vec<PathBuf>,
+        roots: &[PathBuf],
+        cancel: &AtomicBool,
+    ) -> Result<()> {
+        self.import_with_roots(paths, Some(roots), cancel)
     }
     /// Restore a saved folder-relative export name for an already verified import.
     pub fn restore_import_name(&self, id: &str, relative_name: &str) -> Result<()> {
@@ -190,7 +198,12 @@ impl Engine {
         media.relative_name = relative_name.into();
         Ok(())
     }
-    fn import_with_roots(&self, paths: Vec<PathBuf>, roots: Option<&[PathBuf]>) -> Result<()> {
+    fn import_with_roots(
+        &self,
+        paths: Vec<PathBuf>,
+        roots: Option<&[PathBuf]>,
+        cancel: &AtomicBool,
+    ) -> Result<()> {
         let _operation = self.operations.lock().unwrap();
         let mut files = Vec::new();
         let mut seen = HashSet::new();
@@ -212,6 +225,9 @@ impl Engine {
             }
         }
         for (path, relative, import_error) in files {
+            if cancel.load(Ordering::Relaxed) {
+                bail!("Canceled");
+            }
             if files_too_many(self.data.lock().unwrap().media.len()) {
                 bail!(
                     "The batch limit is 10,000 files; import another batch after clearing this one"
@@ -258,27 +274,22 @@ impl Engine {
                     if item.bytes == 0 {
                         bail!("Empty file");
                     }
-                    item.sha256 = hash_file(&item.path)?;
+                    item.sha256 = hash_file_cancelable(&item.path, cancel)?;
                     if self.data.lock().unwrap().media.iter().any(|m| {
                         m.path == item.path && m.sha256 == item.sha256 && m.error.is_none()
                     }) {
                         bail!("This unchanged file is already imported");
                     }
-                    let probe = probe_audio(&self.tools, &item.path, &AtomicBool::new(false))?;
+                    let probe = probe_audio(&self.tools, &item.path, cancel)?;
                     if probe.kind == "image" {
                         let preview = self.root.join("work").join(format!("{id}-source.png"));
-                        let result = self.image_request(
-                            "inspect",
-                            &item.path,
-                            &preview,
-                            None,
-                            &AtomicBool::new(false),
-                        )?;
+                        let result =
+                            self.image_request("inspect", &item.path, &preview, None, cancel)?;
                         item.properties = Some(result.properties);
                     } else {
                         item.properties = Some(probe);
                     }
-                    if hash_file(&item.path)? != item.sha256 {
+                    if hash_file_cancelable(&item.path, cancel)? != item.sha256 {
                         bail!("Source changed during import; add it again");
                     }
                     Ok(())
@@ -745,6 +756,7 @@ impl Engine {
             properties: after,
             diagnostics: Diagnostics {
                 duration_delta: Some(delta as f64 / rate as f64),
+                samples_identical: (s.format == "flac").then_some(true),
                 notices,
                 ..Default::default()
             },
@@ -842,6 +854,15 @@ impl Engine {
         self.changed();
     }
     pub fn export(&self, ids: &[String], destination: &Path, report: bool) -> Result<Vec<String>> {
+        self.export_cancelable(ids, destination, report, &AtomicBool::new(false))
+    }
+    pub fn export_cancelable(
+        &self,
+        ids: &[String],
+        destination: &Path,
+        report: bool,
+        cancel: &AtomicBool,
+    ) -> Result<Vec<String>> {
         let _operation = self.operations.lock().unwrap();
         fs::create_dir_all(destination)?;
         let destination = destination.canonicalize()?;
@@ -854,57 +875,19 @@ impl Engine {
                     continue;
                 }
                 let result = (|| -> Result<String> {
-                    if hash_file(&media.path)? != media.sha256 {
-                        bail!("{} changed; import again before export", media.name);
-                    }
-                    if hash_file(&candidate.path)? != candidate.sha256 {
-                        bail!("Candidate integrity check failed");
-                    }
-                    let relative = Path::new(&media.relative_name);
-                    if relative
-                        .components()
-                        .any(|c| !matches!(c, Component::Normal(_)))
-                    {
-                        bail!("Unsafe export path");
-                    }
-                    let parent =
-                        safe_parent(&destination, relative.parent().unwrap_or(Path::new("")))?;
-                    if fs2::available_space(&parent)? < candidate.bytes {
-                        bail!("Not enough export disk space");
-                    }
-                    let stem = relative.file_stem().unwrap_or_default().to_string_lossy();
-                    let extension = extension(&candidate.settings[0].format);
-                    let mut stage = tempfile::NamedTempFile::new_in(&parent)?;
-                    std::io::copy(&mut File::open(&candidate.path)?, &mut stage)?;
-                    stage.as_file().sync_all()?;
-                    if hash_file(stage.path())? != candidate.sha256 {
-                        bail!("Candidate changed during export; staged output discarded");
-                    }
-                    if hash_file(&media.path)? != media.sha256 {
-                        bail!("Source changed during export; staged output discarded");
-                    }
-                    let mut index = 1;
-                    let exported = loop {
-                        let name = if index == 1 {
-                            format!("{stem}-compressed.{extension}")
-                        } else {
-                            format!("{stem}-compressed-{index}.{extension}")
-                        };
-                        let target = parent.join(name);
-                        match stage.persist_noclobber(&target) {
-                            Ok(_) => break target,
-                            Err(e) if e.error.kind() == std::io::ErrorKind::AlreadyExists => {
-                                stage = e.file;
-                                index += 1;
-                            }
-                            Err(e) => return Err(e.error.into()),
-                        }
-                    };
-                    let relative_output = exported
+                    let exported = verified_export(
+                        media,
+                        &candidate.path,
+                        &candidate.sha256,
+                        candidate.bytes,
+                        extension(&candidate.settings[0].format),
+                        &destination,
+                        cancel,
+                    )?;
+                    Ok(exported
                         .strip_prefix(&destination)?
                         .to_string_lossy()
-                        .into_owned();
-                    Ok(relative_output)
+                        .into_owned())
                 })();
                 if let Some(c) = self
                     .data
@@ -973,6 +956,41 @@ impl Engine {
             );
         }
         Ok(results)
+    }
+    /// Copy an unchanged original when automatic compression would increase its size.
+    /// Uses the same staging, hashing, path and collision safeguards as candidates.
+    pub fn export_original_cancelable(
+        &self,
+        id: &str,
+        destination: &Path,
+        cancel: &AtomicBool,
+    ) -> Result<PathBuf> {
+        let _operation = self.operations.lock().unwrap();
+        let media = self
+            .snapshot()
+            .media
+            .into_iter()
+            .find(|m| m.id == id)
+            .context("Unknown source ID")?;
+        if media.error.is_some() {
+            bail!("Unsupported source cannot be exported");
+        }
+        fs::create_dir_all(destination)?;
+        let destination = destination.canonicalize()?;
+        let ext = media
+            .path
+            .extension()
+            .and_then(|v| v.to_str())
+            .context("Source extension missing")?;
+        verified_export(
+            &media,
+            &media.path,
+            &media.sha256,
+            media.bytes,
+            ext,
+            &destination,
+            cancel,
+        )
     }
     pub fn preview(&self, id: &str) -> Result<String> {
         let _operation = self.operations.lock().unwrap();
@@ -1095,6 +1113,66 @@ impl Engine {
         Ok(())
     }
 }
+fn verified_export(
+    media: &Media,
+    input: &Path,
+    sha256: &str,
+    bytes: u64,
+    extension: &str,
+    destination: &Path,
+    cancel: &AtomicBool,
+) -> Result<PathBuf> {
+    if hash_file_cancelable(&media.path, cancel)? != media.sha256 {
+        bail!("Source changed; import again before export");
+    }
+    if hash_file_cancelable(input, cancel)? != sha256 {
+        bail!("Output integrity check failed");
+    }
+    let relative = Path::new(&media.relative_name);
+    if relative
+        .components()
+        .any(|c| !matches!(c, Component::Normal(_)))
+    {
+        bail!("Unsafe export path");
+    }
+    let parent = safe_parent(destination, relative.parent().unwrap_or(Path::new("")))?;
+    if fs2::available_space(&parent)? < bytes {
+        bail!("Not enough export disk space");
+    }
+    let stem = relative.file_stem().unwrap_or_default().to_string_lossy();
+    let mut stage = tempfile::NamedTempFile::new_in(&parent)?;
+    copy_cancelable(File::open(input)?, &mut stage, cancel)?;
+    stage.as_file().sync_all()?;
+    if stage.as_file().metadata()?.len() != bytes
+        || hash_file_cancelable(stage.path(), cancel)? != sha256
+    {
+        bail!("Output changed during export; staged output discarded");
+    }
+    if hash_file_cancelable(&media.path, cancel)? != media.sha256 {
+        bail!("Source changed during export; staged output discarded");
+    }
+    let mut index = 1;
+    loop {
+        if cancel.load(Ordering::Relaxed) {
+            bail!("Canceled");
+        }
+        let name = if index == 1 {
+            format!("{stem}-compressed.{extension}")
+        } else {
+            format!("{stem}-compressed-{index}.{extension}")
+        };
+        let target = parent.join(name);
+        match stage.persist_noclobber(&target) {
+            Ok(_) => return Ok(target),
+            Err(e) if e.error.kind() == std::io::ErrorKind::AlreadyExists => {
+                stage = e.file;
+                index += 1;
+            }
+            Err(e) => return Err(e.error.into()),
+        }
+    }
+}
+
 fn redact_paths(value: &mut serde_json::Value, paths: &[(String, String)]) {
     match value {
         serde_json::Value::String(text) => {
@@ -1355,4 +1433,55 @@ pub fn probe_audio(tools: &Tools, path: &Path, cancel: &AtomicBool) -> Result<Pr
         sample_format: stream["sample_fmt"].as_str().map(str::to_string),
         ..Default::default()
     })
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::*;
+    #[test]
+    fn verified_cache_roundtrips_fractional_audio_timing() {
+        let setting = Settings {
+            format: "aac".into(),
+            lossless: false,
+            quality: None,
+            bitrate: Some(192.),
+            vbr_quality: None,
+            effort: None,
+            background: None,
+        };
+        let candidate = Candidate {
+            id: "generated".into(),
+            media_id: "source".into(),
+            bytes: 1024,
+            sha256: "hash".into(),
+            settings: vec![setting.clone()],
+            properties: Properties {
+                kind: "audio".into(),
+                sample_rate: Some(44100),
+                duration: Some(0.30186),
+                ..Default::default()
+            },
+            diagnostics: Diagnostics {
+                duration_delta: Some(82. / 44100.),
+                ..Default::default()
+            },
+            preview: None,
+            exported: Vec::new(),
+            export_errors: Vec::new(),
+            path: PathBuf::new(),
+        };
+        let record = CacheRecord {
+            schema: 1,
+            key: "key".into(),
+            checksum: CacheRecord::checksum(&candidate).unwrap(),
+            candidate,
+        };
+        let restored: CacheRecord =
+            serde_json::from_slice(&serde_json::to_vec(&record).unwrap()).unwrap();
+        assert!(restored.verified("key", &setting).unwrap());
+        assert_eq!(
+            restored.candidate.diagnostics.duration_delta,
+            record.candidate.diagnostics.duration_delta
+        );
+    }
 }

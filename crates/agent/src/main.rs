@@ -1,5 +1,6 @@
 use anyhow::{bail, Context, Result};
 use media_agent::{
+    folder::{FolderRequest, Mode},
     protocol::{tools, AgentServer},
     session::{bundled_tools, has_errors, read_json, Scope, Session, MAX_JSON_BYTES},
 };
@@ -17,6 +18,7 @@ const HELP: &str = r#"Media Compression agent interface — MCP stdio + JSON CLI
   media-compression-agent tools
   media-compression-agent guide
   media-compression-agent inspect <file-or-folder> ... --root <folder>
+  media-compression-agent compress-folder <folder> --mode <lossless|smaller|both> --root <folder>
   media-compression-agent study --input <request.json|-> --manifest <study.json> --root <folder>
   media-compression-agent export --input <request.json|-> --root <folder>
 
@@ -34,6 +36,10 @@ Study JSON: {"paths":["/media/image.png"],"settings":[
 Export JSON: {"study":"/media/study.json","candidateIds":["ID"],
  "destination":"/media/export","report":true}
 See tools for MCP schemas and the bundled skill for study/refinement guidance.
+compress-folder waits internally and exports to Lossless/Smaller subfolders.
+--destination <folder> changes the output parent. Default mode is lossless.
+Presets are deterministic; larger outputs keep the original. No optimum or
+invisible-loss promise. JSON summarizes outputs, bytes, exact settings/errors.
 "#;
 
 #[derive(Clone)]
@@ -44,6 +50,8 @@ struct Options {
     input: Option<PathBuf>,
     manifest: Option<PathBuf>,
     paths: Vec<PathBuf>,
+    mode: Mode,
+    destination: Option<PathBuf>,
 }
 impl Options {
     fn parse() -> Result<Option<Self>> {
@@ -66,6 +74,8 @@ impl Options {
             input: None,
             manifest: None,
             paths: Vec::new(),
+            mode: Mode::default(),
+            destination: None,
         };
         if ![
             "mcp",
@@ -76,6 +86,7 @@ impl Options {
             "inspect",
             "study",
             "export",
+            "compress-folder",
         ]
         .contains(&opts.command.as_str())
         {
@@ -92,12 +103,30 @@ impl Options {
                 return Ok(None);
             }
             let flag = arg.to_str().unwrap_or("");
-            if !positional && ["--root", "--workspace", "--input", "--manifest"].contains(&flag) {
+            if !positional && flag == "--mode" {
+                let value = args
+                    .next()
+                    .context("--mode needs a value")?
+                    .into_string()
+                    .map_err(|_| anyhow::anyhow!("Mode must be UTF-8"))?;
+                opts.mode = serde_json::from_value(json!(value))
+                    .context("Choose lossless, smaller or both")?;
+            } else if !positional
+                && [
+                    "--root",
+                    "--workspace",
+                    "--input",
+                    "--manifest",
+                    "--destination",
+                ]
+                .contains(&flag)
+            {
                 let value = PathBuf::from(args.next().context("Option needs a value")?);
                 match flag {
                     "--root" => opts.roots.push(value),
                     "--workspace" => opts.workspace = Some(value),
                     "--input" => opts.input = Some(value),
+                    "--destination" => opts.destination = Some(value),
                     _ => opts.manifest = Some(value),
                 }
             } else if !positional && flag.starts_with('-') {
@@ -106,8 +135,18 @@ impl Options {
                 opts.paths.push(PathBuf::from(arg));
             }
         }
-        if opts.command != "inspect" && !opts.paths.is_empty() {
+        if !["inspect", "compress-folder"].contains(&opts.command.as_str())
+            && !opts.paths.is_empty()
+        {
             bail!("Unexpected positional input; use --help");
+        }
+        if opts.command == "compress-folder" && opts.paths.len() != 1 {
+            bail!("Provide exactly one folder for compress-folder");
+        }
+        if opts.command == "compress-folder" && (opts.input.is_some() || opts.manifest.is_some()) {
+            bail!(
+                "compress-folder uses fixed presets; use study for JSON settings/manifest requests"
+            );
         }
         if ["study", "export"].contains(&opts.command.as_str()) && opts.input.is_none() {
             bail!("Provide --input <JSON file or ->");
@@ -158,6 +197,14 @@ struct ExportRequest {
 
 async fn run_cli(session: Arc<Session>, opts: Options) -> Result<Value> {
     match opts.command.as_str() {
+        "compress-folder" => {
+            let request = FolderRequest {
+                path: opts.paths[0].clone(),
+                mode: opts.mode,
+                destination: opts.destination,
+            };
+            tokio::task::spawn_blocking(move || session.compress_folder(request)).await?
+        }
         "inspect" => {
             let s = session.clone();
             tokio::task::spawn_blocking(move || s.import(opts.paths)).await??;
@@ -183,7 +230,7 @@ async fn run_cli(session: Arc<Session>, opts: Options) -> Result<Value> {
             if session.engine.snapshot().media.is_empty() {
                 bail!("No files found in this selection");
             }
-            session.engine.start(items)?;
+            session.start(items)?;
             session.wait().await;
             let saved = session.save(manifest)?;
             let mut result = session.snapshot();
@@ -265,9 +312,9 @@ async fn execute() -> Result<i32> {
         let cancel = service.cancellation_token();
         tokio::select! {
             result=service.waiting()=>{result?;}
-            signal=tokio::signal::ctrl_c()=>{signal?;session.engine.cancel(None);cancel.cancel();}
+            signal=tokio::signal::ctrl_c()=>{signal?;session.cancel(None);cancel.cancel();}
         }
-        session.engine.cancel(None);
+        session.cancel(None);
         return Ok(0);
     }
     let execution = run_cli(session.clone(), opts.clone());
@@ -275,14 +322,14 @@ async fn execute() -> Result<i32> {
     let (mut result, canceled) = tokio::select! {
         value=&mut execution=>(value?,false),
         signal=tokio::signal::ctrl_c()=>{
-            signal?;session.engine.cancel(None);media_engine::process::shutdown();session.wait().await;
+            signal?;session.cancel(None);media_engine::process::shutdown();session.wait().await;
             let mut value=session.snapshot();value["canceled"]=json!(true);
             if opts.command=="study" {if let Some(p)=&opts.manifest {if let Ok(saved)=session.save(p){value["manifest"]=saved["manifest"].clone();}}}
             (value,true)
         }
     };
     result["applicationVersion"] = json!(env!("CARGO_PKG_VERSION"));
-    let code = if canceled {
+    let code = if canceled || result["canceled"] == true {
         130
     } else if has_errors(&result) {
         2

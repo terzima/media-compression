@@ -1,3 +1,4 @@
+use crate::folder::FolderRequest;
 use crate::session::Session;
 use anyhow::{bail, Context, Result};
 use base64::Engine as _;
@@ -30,6 +31,10 @@ impl AgentServer {
     pub fn dispatch(&self, name: &str, input: Value) -> Result<CallToolResult> {
         let session = &self.session;
         let value = match name {
+            "compress_folder" => {
+                let args: FolderRequest = serde_json::from_value(input)?;
+                session.compress_folder(args)?
+            }
             "compression_capabilities" => {
                 let _: Empty = serde_json::from_value(input)?;
                 let mut v = media_engine::settings::capabilities();
@@ -80,7 +85,7 @@ impl AgentServer {
                         json!({"schemaVersion":1,"plannedEncodes":encodes,"eligibleEncodes":eligible,"maxWorkers":2,"sampleRateConversions":conversions,"notice":"This validates settings without starting jobs; exact sizes and quality require real encodes."}),
                     ));
                 }
-                let ids = session.engine.start(
+                let ids = session.start(
                     args.items
                         .into_iter()
                         .map(|i| (i.media_id, i.settings))
@@ -121,7 +126,7 @@ impl AgentServer {
                         bail!("Unknown job ID");
                     }
                 }
-                session.engine.cancel(args.job_id.as_deref());
+                session.cancel(args.job_id.as_deref());
                 json!({"schemaVersion":1,"cancellationRequested":true,"next":"Poll job_status until queued/processing work ends. Completed candidates remain available."})
             }
             "export_candidates" => {
@@ -159,7 +164,9 @@ impl AgentServer {
             }
             _ => bail!("Unknown tool: {name}"),
         };
-        let failed = name == "export_candidates" && !value["exportError"].is_null();
+        let failed = (name == "export_candidates" && !value["exportError"].is_null())
+            || (name == "compress_folder"
+                && (crate::session::has_errors(&value) || value["canceled"] == true));
         let mut result = CallToolResult::structured(value);
         if failed {
             result.is_error = Some(true);
@@ -265,6 +272,7 @@ pub fn tools() -> Vec<Tool> {
         "effort":{"type":["integer","null"],"minimum":0,"maximum":12},"background":{"type":["string","null"],"description":"Explicit #RRGGBB for transparent-to-JPEG conversion."}}});
     let array_strings = json!({"type":"array","items":{"type":"string"}});
     let definitions=vec![
+        ("compress_folder","Compress and export a granted local folder in one call. Defaults to lossless; smaller authorizes a lossy preset; both creates Lossless and Smaller subfolders. Preserves originals, excludes generated folders/links, reuses verified cache, copies originals when output is larger and returns per-file/aggregate bytes and absolute output paths. Waits internally; allow a timeout covering the batch; concurrent job_status/cancel_study are available. Studies remain optional for comparisons.",json!({"path":{"type":"string"},"mode":{"type":"string","enum":["lossless","smaller","both"],"default":"lossless"},"destination":{"type":["string","null"],"description":"Output parent; defaults to source folder. Must be granted."}}),vec!["path"],false),
         ("compression_capabilities","Inspect supported formats, ranges, codec constraints, worker bounds and granted folders before choosing settings.",json!({}),vec![],true),
         ("import_media","Import files/folders inside granted roots. Originals remain unchanged. Returns the first media page including per-file errors; paginate with list_media.",json!({"paths":array_strings}),vec!["paths"],false),
         ("list_media","Page imported media IDs/properties/errors. Use get_candidates for a particular file's actual results.",json!({"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":100}}),vec![],true),
