@@ -63,7 +63,7 @@ MCP equivalent: `compress_folder({"path":"/media/photos","mode":"both"})`. Defau
 |---|---|---|
 | Lossless | WebP lossless effort 4; PNG effort 2 for supported high precision/gray-profile sources | FLAC level 5 for supported 16-/24-bit integer sources |
 | Smaller | WebP quality 90, effort 4, exact alpha | AAC-LC 192 kbps stereo / 96 kbps mono, preserving supported source rate |
-| Both | Run each of the two narrow presets | Run each of the two narrow presets |
+| Both | Run each narrow preset; Smaller reuses the verified lossless result when smaller | Run each narrow preset; Smaller reuses the verified lossless result when smaller |
 
 Output subfolders are `Lossless` and/or `Smaller` beneath the source folder or requested destination. Nested input paths remain nested; both sets share source basenames with the existing `-compressed` suffix, codec-specific extension and numbered collisions. Originals are copied if the preset cannot preserve required precision/profile/rate or if the candidate is not smaller; their bytes and metadata remain intact. Compressed copies follow normal metadata rules. Failed imports/encodes/exports remain visible; unaffected files continue. Only supported extensions are imported; other files and links/junctions are reported as skipped. Directories named Lossless/Smaller (case-insensitive, at any depth), the active cache and a separate nested destination are excluded on subsequent runs. Reserved folder names are intentional exclusions, even if populated independently. An output folder may not be a link/junction.
 

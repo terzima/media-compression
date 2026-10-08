@@ -363,20 +363,28 @@ impl Session {
                     continue;
                 };
                 let expected = setting(p, policy);
-                let candidate = expected.as_ref().and_then(|s| {
-                    data.media
+                let candidate = data.media.iter().find(|m| m.id == source.id).and_then(|m| {
+                    m.candidates
                         .iter()
-                        .find(|m| m.id == source.id)
-                        .and_then(|m| m.candidates.iter().find(|c| c.settings.contains(s)))
+                        .filter(|c| {
+                            let lossless_alternative = request.mode == Mode::Both
+                                && policy == Mode::Smaller
+                                && c.settings.iter().any(|s| s.lossless)
+                                && verified(c, p, Mode::Lossless);
+                            lossless_alternative
+                                || (expected.as_ref().is_some_and(|s| c.settings.contains(s))
+                                    && verified(c, p, policy))
+                        })
+                        .min_by_key(|c| (c.bytes, !c.settings.iter().any(|s| s.lossless)))
                 });
-                let keep_reason = if expected.is_none() {
-                    Some("Preset cannot preserve this source's supported precision/profile/sample rate; copied the original")
-                } else if let Some(c) = candidate.filter(|c| verified(c, p, policy)) {
+                let keep_reason = if let Some(c) = candidate {
                     if c.bytes >= source.bytes {
                         Some("Candidate is not smaller; copied the original")
                     } else {
                         None
                     }
+                } else if expected.is_none() {
+                    Some("Preset cannot preserve this source's supported precision/profile/sample rate; copied the original")
                 } else {
                     errors.push(json!({"path":source.path,"mode":policy,"error":"No verified candidate for this preset"}));
                     continue;
@@ -408,9 +416,15 @@ impl Session {
                         output_bytes += bytes;
                         exported += 1;
                         encoded += usize::from(c.is_some());
+                        let selected_settings = c.map(|c| {
+                            expected
+                                .as_ref()
+                                .filter(|s| c.settings.contains(s))
+                                .unwrap_or(&c.settings[0])
+                        });
                         rows.push(json!({"source":source.path,"mode":policy,"output":path,"disposition":if c.is_some(){"compressed"}else{"kept_original"},
                             "originalBytes":source.bytes,"outputBytes":bytes,"bytesSaved":source.bytes-bytes,
-                            "sourceSha256":source.sha256,"sha256":c.map_or(&source.sha256,|c|&c.sha256),"settings":c.and(expected),"diagnostics":c.map(|c|&c.diagnostics),"notice":keep_reason}));
+                            "sourceSha256":source.sha256,"sha256":c.map_or(&source.sha256,|c|&c.sha256),"settings":selected_settings,"producingSettings":c.map(|c|&c.settings),"diagnostics":c.map(|c|&c.diagnostics),"notice":keep_reason}));
                     }
                     Err(e) => errors
                         .push(json!({"path":source.path,"mode":policy,"error":format!("{e:#}")})),
@@ -424,7 +438,7 @@ impl Session {
             json!({"schemaVersion":1,"applicationVersion":env!("CARGO_PKG_VERSION"),"path":root,"destination":destination,"mode":request.mode,
             "sourceFiles":media.len(),"plannedEncodes":planned,"elapsedSeconds":started.elapsed().as_secs_f64(),"canceled":self.folder_canceled.load(Ordering::SeqCst),
             "summaries":summaries,"outputs":rows,"skipped":skipped,"errors":errors,
-            "notice":"Deterministic preset, not a search for an optimum. Images: WebP lossless effort 4 or lossy quality 90 effort 4; precision/profile fallback PNG effort 2. Audio: FLAC level 5 or AAC-LC 192 kbps stereo/96 mono. Larger results keep the original. Lossy quality is not guaranteed invisible. Verified cache is reused; originals stay unchanged."}),
+            "notice":"Deterministic preset, not a search for an optimum. Images: WebP lossless effort 4 or lossy quality 90 effort 4; precision/profile fallback PNG effort 2. Audio: FLAC level 5 or AAC-LC 192 kbps stereo/96 mono. Both reuses a smaller verified lossless alternative. Larger results keep the original. Lossy quality is not guaranteed invisible. Verified cache is reused; originals stay unchanged."}),
         )
     }
 }

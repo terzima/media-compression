@@ -578,8 +578,8 @@ fn automatic_folder_mixed_outputs_cache_fallback_and_partial_errors() {
         assert_eq!(hash_file(output).unwrap(), row["sha256"]);
         assert!(row["outputBytes"].as_u64().unwrap() <= row["originalBytes"].as_u64().unwrap());
         if row["source"] == sixteen.to_str().unwrap() && row["mode"] == "smaller" {
-            assert_eq!(row["disposition"], "kept_original");
-            assert!(row["settings"].is_null());
+            assert_eq!(row["disposition"], "compressed");
+            assert_eq!(row["settings"]["lossless"], true);
         }
         if row["source"] == wav.to_str().unwrap()
             && row["mode"] == "lossless"
@@ -593,6 +593,24 @@ fn automatic_folder_mixed_outputs_cache_fallback_and_partial_errors() {
         {
             assert_eq!(row["diagnostics"]["pixelIdentical"], true);
         }
+    }
+    // When Both has already generated an exact candidate, Smaller must not choose
+    // a larger lossy result. No extra study/encoding is required for this decision.
+    for smaller in result["outputs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|r| r["mode"] == "smaller")
+    {
+        let lossless = result["outputs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["mode"] == "lossless" && r["source"] == smaller["source"])
+            .unwrap();
+        assert!(
+            smaller["outputBytes"].as_u64().unwrap() <= lossless["outputBytes"].as_u64().unwrap()
+        );
     }
     assert!(result["outputs"]
         .as_array()
