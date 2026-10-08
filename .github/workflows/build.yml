@@ -70,6 +70,7 @@ jobs:
             target/release
             target/${{ matrix.target }}
           key: rust-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
+          restore-keys: rust-${{ matrix.target }}-
       - run: npm ci
       - name: Release tooling checks
         run: node --test scripts/release.node-test.mjs
