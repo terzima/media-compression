@@ -1,0 +1,134 @@
+{
+  "schemaVersion": 1,
+  "recipeVersion": 1,
+  "scope": "Static PNG/JPEG/WebP images and supported mono/stereo audio. Recipes use bundled codecs; video, resizing and surround are outside this application.",
+  "requiredContext": ["local inputs within granted folders", "output destination within granted folders when export is requested", "compression goal and whether lossy copies are allowed"],
+  "defaults": {
+    "unresolvedQualityGoal": "Ask once about exact preservation versus visually similar/listening-approved lossy copies; reuse existing answers. If the user delegates without authorizing loss, use lossless.",
+    "report": false,
+    "originals": "Never overwrite; retain dimensions/channels and rendering-critical properties. A smaller result is not guaranteed.",
+    "return": "Give the exported images/audio or usable paths, original/output bytes, savings, actual settings and material notices/errors. Use exports[].path from this export call; historical candidate.exported filenames are relative and may belong to earlier destinations. Show exact preservation only when verified. Do not stop with a plan."
+  },
+  "workflows": {
+    "studyMcp": ["compression_capabilities", "import_media for requested inputs only; paginate list_media if needed", "Choose an applicable variant and filter/validate its settings against actual properties; plan_study exposes invalid settings and sample-rate conversions", "Disclose required conversions before starting; do not silently change precision, transparency, rate or channels", "start_study with imported mediaId/settings; poll returned job IDs until ready/failed/canceled", "get_candidates; inspect errors and apply recipe selection to real outputs", "export_candidates with chosen candidateIds and granted destination when export was authorized"],
+    "studyCli": ["Use full executable paths and argument arrays; read capabilities, tools and recipes", "inspect requested inputs; choose applicable settings using actual properties and codec limits", "Write request JSON {paths:[absolute input paths],settings:[chosen encoder settings]}; study --input request.json --manifest new-study.json --root granted-folder waits internally", "Read real candidates/errors; export --input export.json --root granted-folder with {study:manifest path,candidateIds:[chosen IDs],destination:absolute output folder,report:false}", "Use new request/manifest names for refinements; verified cache avoids duplicate encodes; disclose partial failures and verify export outcomes", "Keep control JSON/manifests in a task-owned temporary directory within grants; remove only those task-created control files after export unless the user wants the study saved"],
+    "folderMcp": "compress_folder({path,mode,destination}); waits and selects/verifies/exports internally",
+    "folderCli": "compress-folder <folder> --mode lossless|smaller|both --destination <output-parent> --root <granted-folder>; waits and returns output paths"
+  },
+  "recipes": [
+    {
+      "id": "image-exact",
+      "kind": "image",
+      "goal": "Make a smaller copy with exactly unchanged decoded pixels",
+      "workflow": "study",
+      "variants": [
+        {"id":"png", "conditions":{"sourceFormats":["png","jpeg","webp"]}, "settings":[{"format":"png","lossless":true,"effort":2},{"format":"png","lossless":true,"effort":4}]},
+        {"id":"webp", "conditions":{"maximumBitDepth":8,"excludedColorProfiles":["gray"]}, "settings":[{"format":"webp","lossless":true,"effort":4},{"format":"webp","lossless":true,"effort":6}]}
+      ],
+      "selection": "Try supported alternatives; require a lossless producing setting and pixelIdentical=true, unchanged dimensions/precision and rendering-critical properties. Export the smallest tested valid output below original bytes. If none is smaller, return the original path and reason.",
+      "notes": "High precision and gray ICC sources permit lossless PNG optimization only when the source is PNG. SSIM=1 alone is insufficient. Compressed copies can remove private metadata."
+    },
+    {
+      "id": "image-smaller",
+      "requiresLossyPermission": true,
+      "kind": "image",
+      "goal": "Make a smaller image quickly; lossy copies are allowed",
+      "workflow": "study",
+      "variants": [{"id":"webp", "conditions":{"maximumBitDepth":8}, "settings":[{"format":"webp","lossless":false,"quality":90,"effort":4}]}],
+      "selection": "Export the valid preset if it is smaller; otherwise return the original and reason. This is a single-preset operation, not a quality study or invisible-loss guarantee."
+    },
+    {
+      "id": "image-measured-study",
+      "requiresLossyPermission": true,
+      "kind": "image",
+      "goal": "Recommend a visually similar smaller image using real measurements; lossy copies are allowed",
+      "workflow": "study",
+      "variants": [
+        {"id":"lossless-baseline", "conditions":{"maximumBitDepth":8,"excludedColorProfiles":["gray"]}, "settings":[{"format":"webp","lossless":true,"effort":4}]},
+        {"id":"lossy", "conditions":{"maximumBitDepth":8}, "settings":[{"format":"webp","lossless":false,"quality":98,"effort":4},{"format":"webp","lossless":false,"quality":95,"effort":4},{"format":"webp","lossless":false,"quality":90,"effort":4}]}
+      ],
+      "selection": "Compare bytes, both SSIM composites, alpha errors and notices. Prefer a lossless candidate when it is at least as small as a suitable lossy candidate. Refine only where warranted. Use user requirements/inspection to recommend a tradeoff; no universal SSIM threshold proves invisibility. Export when already authorized to choose; otherwise present alternatives for requested review.",
+      "notes": "Preserve alpha. Quality is an encoder control. MCP previews are thumbnails, not full-resolution inspection. Missing SSIM is unavailable evidence."
+    },
+    {
+      "id": "image-compatible-format",
+      "kind": "image",
+      "goal": "Use a requested PNG/JPEG/WebP output format",
+      "workflow": "study",
+      "variants": [
+        {"id":"png-lossless", "conditions":{"requestedFormat":"png"}, "settings":[{"format":"png","lossless":true,"effort":2}]},
+        {"id":"webp-lossless", "conditions":{"requestedFormat":"webp","losslessRequired":true,"maximumBitDepth":8,"excludedColorProfiles":["gray"]}, "settings":[{"format":"webp","lossless":true,"effort":4}]},
+        {"id":"webp-lossy", "conditions":{"requestedFormat":"webp","lossyAllowed":true,"maximumBitDepth":8}, "settings":[{"format":"webp","lossless":false,"quality":90,"effort":4}]},
+        {"id":"jpeg", "conditions":{"requestedFormat":"jpeg","lossyAllowed":true,"maximumBitDepth":8}, "settings":[{"format":"jpeg","lossless":false,"quality":90}]}
+      ],
+      "selection": "Respect the requested format and preservation requirements. Ask for an explicit #RRGGBB background before adding background to JPEG settings for transparent input. Export a larger valid output only when the format requirement/deliberate choice warrants it and disclose its size.",
+      "notes": "No lossless JPEG encoder is provided. PNG lossy palette studies are available through custom settings. Reject unsupported precision rather than silently reducing it."
+    },
+    {
+      "id": "audio-exact",
+      "kind": "audio",
+      "goal": "Make a smaller audio copy with exactly unchanged decoded samples",
+      "workflow": "study",
+      "variants": [{"id":"flac", "conditions":{"integerBitDepths":[16,24]}, "settings":[{"format":"flac","lossless":true,"effort":5},{"format":"flac","lossless":true,"effort":8}]}],
+      "selection": "Require lossless settings, samplesIdentical=true and unchanged sample rate, channels/layout and supported precision. Export the smallest tested valid output below original bytes, otherwise return the original and reason.",
+      "notes": "Inspect bit depth and sample format before using FLAC. Float/unsupported precision cannot be silently converted for an exact claim. Converting MP3/AAC to FLAC cannot recover discarded information."
+    },
+    {
+      "id": "audio-smaller",
+      "requiresLossyPermission": true,
+      "kind": "audio",
+      "goal": "Make a smaller audio copy quickly; lossy copies are allowed",
+      "workflow": "study",
+      "variants": [
+        {"id":"mono", "conditions":{"channels":1}, "settings":[{"format":"aac","lossless":false,"bitrate":96}]},
+        {"id":"stereo", "conditions":{"channels":2}, "settings":[{"format":"aac","lossless":false,"bitrate":192}]}
+      ],
+      "selection": "Use the applicable channel variant, preserving a supported source rate. Disclose required rate conversion before encoding; choose a rate-preserving supported alternative if conversion was not authorized. Export only when smaller, otherwise return the original and reason.",
+      "notes": "AAC-LC produces M4A. Check duration/timing/notices; do not claim inaudibility from bitrate or timing. No normalization, trimming or channel mixing."
+    },
+    {
+      "id": "audio-listening-study",
+      "requiresLossyPermission": true,
+      "kind": "audio",
+      "goal": "Compare measured sizes and listen to audio candidates; lossy copies are allowed",
+      "workflow": "study",
+      "variants": [
+        {"id":"aac-mono", "conditions":{"channels":1,"requestedFormat":"aac"}, "settings":[{"format":"aac","lossless":false,"bitrate":96},{"format":"aac","lossless":false,"bitrate":64},{"format":"aac","lossless":false,"bitrate":48}]},
+        {"id":"aac-stereo", "conditions":{"channels":2,"requestedFormat":"aac"}, "settings":[{"format":"aac","lossless":false,"bitrate":192},{"format":"aac","lossless":false,"bitrate":128},{"format":"aac","lossless":false,"bitrate":96}]},
+        {"id":"mp3", "conditions":{"requestedFormat":"mp3"}, "settings":[{"format":"mp3","lossless":false,"vbrQuality":2,"effort":5},{"format":"mp3","lossless":false,"vbrQuality":4,"effort":5},{"format":"mp3","lossless":false,"vbrQuality":6,"effort":5}]},
+        {"id":"opus-mono", "conditions":{"channels":1,"requestedFormat":"opus"}, "settings":[{"format":"opus","lossless":false,"bitrate":64,"effort":10},{"format":"opus","lossless":false,"bitrate":48,"effort":10},{"format":"opus","lossless":false,"bitrate":32,"effort":10}]},
+        {"id":"opus-stereo", "conditions":{"channels":2,"requestedFormat":"opus"}, "settings":[{"format":"opus","lossless":false,"bitrate":160,"effort":10},{"format":"opus","lossless":false,"bitrate":96,"effort":10},{"format":"opus","lossless":false,"bitrate":64,"effort":10}]}
+      ],
+      "defaultFormat": "aac when it preserves the source rate; choose a supported alternative or disclose any required conversion",
+      "selection": "Inspect actual bytes, source/output properties, durationDelta and notices; reject unexplained truncation. Use the user's listening feedback to choose acceptable tradeoffs. If delegated to choose and export without listening, deliver a conservative recommendation qualified as unverified perceptual quality, not inaudible. Do not invent an audio similarity score.",
+      "notes": "Opus processes at 48 kHz; disclose before processing other rates. MP3 VBR lower numbers mean higher quality. Listening comparison in the GUI uses a shared timeline/volume; agent studies do not automatically populate the GUI."
+    },
+    {
+      "id": "custom-study",
+      "kind": "image-or-audio",
+      "goal": "Use user-specified format, quality/bitrate/VBR levels or effort",
+      "workflow": "study",
+      "variants": [],
+      "selection": "Build settings from the supplied values and actual codec capabilities. Accept the full supported range without a perceptual floor; validate combinations and preflight work. Respect requested selection/export policy, including deliberate aggressive or larger outputs. Ask only for missing consequential choices; reuse known answers.",
+      "notes": "Each media item accepts 1–512 settings, with bounded workers and cancellation. Quality/bitrate values cannot predict exact output size. Separate CLI requests for different media kinds/settings; MCP supports per-file settings."
+    },
+    {
+      "id": "size-budget-study",
+      "kind": "image-or-audio",
+      "goal": "Try to fit an explicit maximum file size within the user's quality/format constraints",
+      "workflow": "study",
+      "variants": [],
+      "selection": "Start from an applicable measured-image or audio-study recipe, compare actual bytes to the user's byte budget and refine a bounded set of supported levels. Do not assume monotonic size or a globally optimal binary search. Apply only user-supplied quality constraints. Export a valid within-budget recommendation when authorized; otherwise explain the unmet budget and useful alternatives without silently overriding constraints.",
+      "notes": "Resizing, trimming and channel mixing are outside these recipes. A budget can be impossible at preserved dimensions/channels. SSIM targets remain diagnostic targets; audio needs listening for perceptual judgments."
+    },
+    {
+      "id": "folder-copies",
+      "kind": "mixed-folder",
+      "goal": "Compress a folder with no per-file agent orchestration",
+      "workflow": "folder",
+      "modes": ["lossless","smaller","both"],
+      "selection": "Default lossless unless lossy copies are authorized. Smaller uses the documented preset; Both makes Lossless and Smaller folders and prefers a verified lossless output in Smaller when it saves at least as much. Run one folder command, wait, and return actual output paths/totals/errors.",
+      "notes": "Copies originals if a preset is unsupported or would enlarge the file. Skips generated folders/cache/links and preserves nested paths. Disclose copied originals and partial failures. Use custom studies only when requested."
+    }
+  ]
+}

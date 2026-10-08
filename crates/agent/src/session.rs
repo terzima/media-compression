@@ -3,6 +3,7 @@ use media_engine::{Engine, Settings, Snapshot, Tools};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
+    collections::HashMap,
     fs,
     io::{Read, Write},
     path::{Component, Path, PathBuf},
@@ -254,9 +255,20 @@ impl Session {
             self.scope.path(&media.path)?;
         }
         let destination = self.scope.path(destination)?;
+        let prior_exports: HashMap<_, _> = snapshot
+            .media
+            .iter()
+            .flat_map(|m| &m.candidates)
+            .map(|c| (c.id.clone(), c.exported.len()))
+            .collect();
         let result = self.engine.export(&ids, &destination, report);
-        let mut value = self.snapshot();
+        let after = self.engine.snapshot();
+        let exports: Vec<_> = after.media.iter().flat_map(|m| &m.candidates).filter(|c| ids.contains(&c.id)).flat_map(|c| {
+            c.exported.iter().skip(prior_exports.get(&c.id).copied().unwrap_or(0)).map(|relative| json!({"candidateId":c.id,"path":destination.join(relative),"bytes":c.bytes,"sha256":c.sha256}))
+        }).collect();
+        let mut value = snapshot_json(after);
         value["destination"] = json!(destination);
+        value["exports"] = json!(exports);
         value["exportError"] = result
             .err()
             .map(|e| json!(format!("{e:#}")))

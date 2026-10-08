@@ -19,6 +19,7 @@ Tools:
 | Tool | Purpose |
 |---|---|
 | compression_capabilities | Supported settings, codec constraints, limits and granted folders |
+| compression_recipes | Read-only image/audio recipe catalog; optional recipeId selects one plus execution guidance |
 | compress_folder | One-call preset compression and verified export of a mixed folder; lossless/smaller/both |
 | import_media / list_media | Inspect file/folder inputs, paginate IDs/properties/errors |
 | plan_study | Validate proposed settings and disclose encode count/rate conversions without processing |
@@ -42,6 +43,8 @@ media-compression-agent --help
 media-compression-agent capabilities
 media-compression-agent tools
 media-compression-agent guide
+media-compression-agent recipes
+media-compression-agent recipes audio-exact
 media-compression-agent config --root /media
 media-compression-agent inspect /media/image.png --root /media
 media-compression-agent compress-folder /media/photos --mode both --root /media
@@ -50,6 +53,8 @@ media-compression-agent export --input /media/export-request.json --root /media
 ```
 
 ## Automatic folder workflow
+
+For other goals, use the [recipe book](RECIPES.md): the same versioned JSON catalog is embedded in CLI/MCP and bundled beside the portable skill. Discovery does not start an engine or touch media. Recipes supply concrete settings variants, conditions and MCP/CLI execution steps; they do not introduce automatic perceptual-quality targets. Both recipe discovery and the folder command are extensions after alpha.1.
 
 Development extension after alpha.1: `compress-folder` / `compress_folder`. The published alpha.1 does not yet include it; check the installed executable's tools/help before use. No release is replaced by this extension.
 
@@ -99,6 +104,10 @@ Export request:
 ```
 
 Later export imports only the selected source files, restores their folder-relative names, verifies original hashes, and regenerates/verifies selected candidates using current bundled codecs and verified caches. Unchanged originals are required. Missing/changed sources or candidate hash differences are reported; unaffected selected files can still export. Manifests contain private local paths and are not sanitized public reports. A manually edited manifest cannot direct the engine to copy an arbitrary candidate path.
+
+In the recipe-book development update, CLI/MCP export responses add `exports`: successful exports from this call only, each with `candidateId`, absolute `path`, `bytes` and `sha256`. Use these paths to return/open images and audio, including successful files beside partial failures. Candidate `exported` lists remain historical relative filenames; they must not be treated as absolute paths or attributed to the current destination after multiple exports. Older helpers return `destination` and relative filenames; track that operation's additions before resolving paths.
+
+IDs are opaque and session-local. CLI export accepts IDs from the saved study, then reopens/regenerates candidates; returned candidate IDs belong to its current snapshot and may differ from manifest IDs. Use hashes/settings to associate study results across sessions and use the returned absolute paths to deliver files.
 
 Data commands return versioned JSON on stdout; failures return JSON on stderr. MCP reserves stdout for protocol messages. Exit codes: 0 success, 1 invalid request/runtime failure, 2 partial file failure, 130 interrupted. `--input -` reads JSON from stdin. Input/manifest JSON is limited to 64 MiB; encoder settings use the engine's bounds. Ctrl-C cancels work; completed study candidates can be saved for later export.
 

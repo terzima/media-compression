@@ -4,6 +4,8 @@ Your existing agent can provide the conversation: ask for missing details, run M
 
 You only need to provide a local file or folder and where to save copies. An attachment works when your client can make it available locally. You do not need encoder names, terminal commands, quality numbers, or a proposed study. The agent should reuse choices you already made, ask only for consequential missing information, and complete the exports you authorized.
 
+The bundled [recipe book for images and audio](RECIPES.md) gives the agent repeatable settings and command workflows for those goals. Once the required information is known, it can follow the recipe through verified export and give you the files. Recipe discovery requires the development update after alpha.1.
+
 ## Requests you can copy
 
 **Help me decide, then do it:**

@@ -1,4 +1,5 @@
 use crate::folder::FolderRequest;
+use crate::recipes::catalog;
 use crate::session::Session;
 use anyhow::{bail, Context, Result};
 use base64::Engine as _;
@@ -31,6 +32,10 @@ impl AgentServer {
     pub fn dispatch(&self, name: &str, input: Value) -> Result<CallToolResult> {
         let session = &self.session;
         let value = match name {
+            "compression_recipes" => {
+                let args: RecipeQuery = serde_json::from_value(input)?;
+                catalog(args.recipe_id.as_deref())?
+            }
             "compress_folder" => {
                 let args: FolderRequest = serde_json::from_value(input)?;
                 session.compress_folder(args)?
@@ -201,6 +206,11 @@ fn media_page(mut snapshot: Value, offset: usize, limit: usize) -> Result<Value>
 #[serde(deny_unknown_fields)]
 struct Empty {}
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RecipeQuery {
+    recipe_id: Option<String>,
+}
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Paths {
     paths: Vec<PathBuf>,
@@ -272,6 +282,7 @@ pub fn tools() -> Vec<Tool> {
         "effort":{"type":["integer","null"],"minimum":0,"maximum":12},"background":{"type":["string","null"],"description":"Explicit #RRGGBB for transparent-to-JPEG conversion."}}});
     let array_strings = json!({"type":"array","items":{"type":"string"}});
     let definitions=vec![
+        ("compression_recipes","Read the bundled recipe book for image/audio exact preservation, smaller presets, measured/listening studies, custom settings, size budgets and folder copies. Optional recipeId returns one recipe plus shared execution guidance. Read-only; does not import, encode or export.",json!({"recipeId":{"type":["string","null"]}}),vec![],true),
         ("compress_folder","Compress and export a granted local folder in one call. Defaults to lossless; smaller authorizes a lossy preset; both creates Lossless and Smaller subfolders. Preserves originals, excludes generated folders/links, reuses verified cache, copies originals when output is larger and returns per-file/aggregate bytes and absolute output paths. Waits internally; allow a timeout covering the batch; concurrent job_status/cancel_study are available. Studies remain optional for comparisons.",json!({"path":{"type":"string"},"mode":{"type":"string","enum":["lossless","smaller","both"],"default":"lossless"},"destination":{"type":["string","null"],"description":"Output parent; defaults to source folder. Must be granted."}}),vec!["path"],false),
         ("compression_capabilities","Inspect supported formats, ranges, codec constraints, worker bounds and granted folders before choosing settings.",json!({}),vec![],true),
         ("import_media","Import files/folders inside granted roots. Originals remain unchanged. Returns the first media page including per-file errors; paginate with list_media.",json!({"paths":array_strings}),vec!["paths"],false),

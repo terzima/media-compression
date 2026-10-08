@@ -2,6 +2,7 @@ use anyhow::{bail, Context, Result};
 use media_agent::{
     folder::{FolderRequest, Mode},
     protocol::{tools, AgentServer},
+    recipes::catalog,
     session::{bundled_tools, has_errors, read_json, Scope, Session, MAX_JSON_BYTES},
 };
 use media_engine::Settings;
@@ -17,6 +18,7 @@ const HELP: &str = r#"Media Compression agent interface — MCP stdio + JSON CLI
   media-compression-agent capabilities
   media-compression-agent tools
   media-compression-agent guide
+  media-compression-agent recipes [recipe-id]
   media-compression-agent inspect <file-or-folder> ... --root <folder>
   media-compression-agent compress-folder <folder> --mode <lossless|smaller|both> --root <folder>
   media-compression-agent study --input <request.json|-> --manifest <study.json> --root <folder>
@@ -83,6 +85,7 @@ impl Options {
             "capabilities",
             "tools",
             "guide",
+            "recipes",
             "inspect",
             "study",
             "export",
@@ -135,10 +138,13 @@ impl Options {
                 opts.paths.push(PathBuf::from(arg));
             }
         }
-        if !["inspect", "compress-folder"].contains(&opts.command.as_str())
+        if !["inspect", "compress-folder", "recipes"].contains(&opts.command.as_str())
             && !opts.paths.is_empty()
         {
             bail!("Unexpected positional input; use --help");
+        }
+        if opts.command == "recipes" && opts.paths.len() > 1 {
+            bail!("Provide at most one recipe ID");
         }
         if opts.command == "compress-folder" && opts.paths.len() != 1 {
             bail!("Provide exactly one folder for compress-folder");
@@ -290,6 +296,15 @@ async fn execute() -> Result<i32> {
             "{}",
             json!({"schemaVersion":1,"instructions":include_str!("../../../agent-plugin/skills/media-compression/SKILL.md")})
         );
+        return Ok(0);
+    }
+    if opts.command == "recipes" {
+        let id = opts
+            .paths
+            .first()
+            .map(|p| p.to_str().context("Recipe ID must be UTF-8"))
+            .transpose()?;
+        println!("{}", catalog(id)?);
         return Ok(0);
     }
     let scope = Scope::new(opts.roots.clone())?;

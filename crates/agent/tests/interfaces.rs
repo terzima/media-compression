@@ -189,7 +189,7 @@ fn setup_discovery_is_json_and_does_not_create_a_workspace() {
     let root = dir.path().canonicalize().unwrap();
     let workspace = root.join("unused-cache");
     let mut results = Vec::new();
-    for mode in ["guide", "capabilities", "tools", "config"] {
+    for mode in ["guide", "capabilities", "tools", "config", "recipes"] {
         let output = command(&root, &workspace, mode).output().unwrap();
         assert!(
             output.status.success(),
@@ -204,10 +204,27 @@ fn setup_discovery_is_json_and_does_not_create_a_workspace() {
     }
     assert!(results[0]["instructions"].as_str().unwrap().len() > 100);
     assert_eq!(results[1]["maxWorkers"], 2);
-    assert_eq!(results[2]["tools"].as_array().unwrap().len(), 12);
+    assert_eq!(results[2]["tools"].as_array().unwrap().len(), 13);
     let server = &results[3]["mcpServers"]["media-compression"];
     assert!(Path::new(server["command"].as_str().unwrap()).is_file());
     assert_eq!(server["args"], json!(["mcp", "--root", root]));
+    assert_eq!(results[4], media_agent::recipes::catalog(None).unwrap());
+    let filtered = command(&root, &workspace, "recipes")
+        .arg("audio-exact")
+        .output()
+        .unwrap();
+    assert!(filtered.status.success());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&filtered.stdout).unwrap(),
+        media_agent::recipes::catalog(Some("audio-exact")).unwrap()
+    );
+    let unknown = command(&root, &workspace, "recipes")
+        .arg("video")
+        .output()
+        .unwrap();
+    assert_eq!(unknown.status.code(), Some(1));
+    assert!(serde_json::from_slice::<Value>(&unknown.stderr).unwrap()["error"].is_object());
+    assert!(!workspace.exists());
 }
 
 #[test]
@@ -281,6 +298,11 @@ fn cli_study_export_and_stale_source_rejection() {
         json!({"study":manifest,"candidateIds":[id],"destination":destination,"report":true});
     let (code, export) = run(root, &workspace, "export", request.clone(), None);
     assert_eq!(code, 0, "{export}");
+    assert_eq!(export["exports"].as_array().unwrap().len(), 1);
+    assert_eq!(export["exports"][0]["sha256"], hash);
+    let absolute_output = Path::new(export["exports"][0]["path"].as_str().unwrap());
+    assert!(absolute_output.is_absolute());
+    assert_eq!(hash_file(absolute_output).unwrap(), hash);
     let output = export["media"][0]["candidates"]
         .as_array()
         .unwrap()
@@ -293,6 +315,8 @@ fn cli_study_export_and_stale_source_rejection() {
     assert_eq!(hash_file(&source).unwrap(), original_hash);
     let (code, again) = run(root, &workspace, "export", request.clone(), None);
     assert_eq!(code, 0, "{again}");
+    assert_eq!(again["exports"].as_array().unwrap().len(), 1);
+    assert_ne!(again["exports"][0]["path"], export["exports"][0]["path"]);
     assert_eq!(
         std::fs::read_dir(&destination)
             .unwrap()
@@ -399,6 +423,7 @@ fn mcp_discovers_tools_studies_previews_exports_and_cancels() {
             .unwrap();
     }
     writer.finalize().unwrap();
+    let audio_hash = hash_file(&wav).unwrap();
     let mut client = Client::new(root, &root.join("mcp-cache"));
     let tools = client.request("tools/list", json!({}));
     assert!(tools["result"]["tools"]
@@ -428,7 +453,23 @@ fn mcp_discovers_tools_studies_previews_exports_and_cancels() {
         .as_str()
         .unwrap()
         .to_owned();
-    let items = json!({"items":[{"mediaId":id,"settings":[{"format":"webp","lossless":true}]},{"mediaId":audio_id,"settings":[{"format":"flac","lossless":true,"effort":5}]}]});
+    let image_recipe = client.call("compression_recipes", json!({"recipeId":"image-exact"}));
+    let audio_recipe = client.call("compression_recipes", json!({"recipeId":"audio-exact"}));
+    assert_eq!(image_recipe["isError"], false);
+    assert_eq!(audio_recipe["isError"], false);
+    assert_eq!(
+        client.call("compression_recipes", json!({"recipeId":"video"}))["isError"],
+        true
+    );
+    assert_eq!(
+        client.call("compression_recipes", json!({"unexpected":true}))["isError"],
+        true
+    );
+    let image_setting =
+        &image_recipe["structuredContent"]["recipes"][0]["variants"][1]["settings"][0];
+    let audio_setting =
+        &audio_recipe["structuredContent"]["recipes"][0]["variants"][0]["settings"][0];
+    let items = json!({"items":[{"mediaId":id,"settings":[image_setting]},{"mediaId":audio_id,"settings":[audio_setting]}]});
     let plan = client.call("plan_study", items.clone());
     assert_eq!(plan["structuredContent"]["eligibleEncodes"], 2);
     assert_eq!(
@@ -461,11 +502,34 @@ fn mcp_discovers_tools_studies_previews_exports_and_cancels() {
         .as_array()
         .unwrap()
         .is_empty());
+    let audio_candidate = &audio["structuredContent"]["media"]["candidates"][0];
+    assert_eq!(audio_candidate["diagnostics"]["samplesIdentical"], true);
     let exported = client.call(
         "export_candidates",
-        json!({"candidateIds":[candidate_id],"destination":root.join("output"),"report":true}),
+        json!({"candidateIds":[candidate_id,audio_candidate["id"]],"destination":root.join("output"),"report":true}),
     );
     assert_eq!(exported["isError"], false, "{exported}");
+    let outputs = exported["structuredContent"]["exports"].as_array().unwrap();
+    assert_eq!(outputs.len(), 2);
+    for output in outputs {
+        let path = Path::new(output["path"].as_str().unwrap());
+        assert!(path.is_absolute() && path.is_file());
+        assert_eq!(hash_file(path).unwrap(), output["sha256"]);
+    }
+    let again = client.call("export_candidates", json!({"candidateIds":[audio_candidate["id"]],"destination":root.join("second-output"),"report":false}));
+    let outputs = again["structuredContent"]["exports"].as_array().unwrap();
+    assert_eq!(outputs.len(), 1);
+    let path = Path::new(outputs[0]["path"].as_str().unwrap());
+    assert!(path.starts_with(root.join("second-output").canonicalize().unwrap()) && path.is_file());
+    let held_audio = root.join("held-audio.wav");
+    std::fs::rename(&wav, &held_audio).unwrap();
+    let partial = client.call("export_candidates", json!({"candidateIds":[candidate_id,audio_candidate["id"]],"destination":root.join("partial-output"),"report":false}));
+    std::fs::rename(&held_audio, &wav).unwrap();
+    assert!(!partial["structuredContent"]["exportError"].is_null());
+    let outputs = partial["structuredContent"]["exports"].as_array().unwrap();
+    assert_eq!(outputs.len(), 1);
+    assert_eq!(outputs[0]["candidateId"], candidate_id);
+    assert!(Path::new(outputs[0]["path"].as_str().unwrap()).is_file());
     assert_eq!(
         client.call("save_study", json!({"path":root.join("mcp-study.json")}))["isError"],
         false
@@ -489,6 +553,7 @@ fn mcp_discovers_tools_studies_previews_exports_and_cancels() {
         std::thread::sleep(Duration::from_millis(40));
     }
     assert_eq!(hash_file(&source).unwrap(), hash);
+    assert_eq!(hash_file(&wav).unwrap(), audio_hash);
     let settings: Vec<_> = (0..512)
         .map(|i| json!({"format":"webp","lossless":false,"quality":i as f64/512.*100.}))
         .collect();
