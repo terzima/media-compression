@@ -24,6 +24,7 @@ function unique(files,name){
   if(found.length!==1)throw Error(`Expected one ${name}, found ${found.length}`);
   return found[0];
 }
+const record=(files,name)=>unique(files.filter(file=>path.basename(path.dirname(file))==='artifacts'),name);
 const json=async file=>JSON.parse(await readFile(file,'utf8'));
 export async function prepareRelease({inputDir,outputDir,tag,commit,runUrl,sourceFile,notesFile,root=process.cwd()}){
   if(!/^v\d+\.\d+\.\d+-alpha\.[1-9]\d*$/.test(tag))throw Error('Only explicit alpha tags may publish unsigned previews');
@@ -38,7 +39,7 @@ export async function prepareRelease({inputDir,outputDir,tag,commit,runUrl,sourc
   const pending=[],platforms=[];
   for(const platform of targets){
     const files=await walk(path.join(inputDir,`candidate-${platform.target}`));
-    const build=await json(unique(files,'build-evidence.json'));
+    const build=await json(record(files,'build-evidence.json'));
     if(build.commit!==commit||build.workingTreeChanges!==false||build.target!==platform.target||build.qualification!=='unsigned development candidate')throw Error(`Build provenance mismatch: ${platform.target}`);
     if(build.artifacts.length!==1)throw Error('Expected exactly one platform installer');
     const item=build.artifacts[0];
@@ -46,22 +47,22 @@ export async function prepareRelease({inputDir,outputDir,tag,commit,runUrl,sourc
     const installer=unique(files,path.posix.basename(item.filename));
     const data=await readFile(installer);
     if(hash(data)!==item.sha256||data.length!==item.bytes)throw Error('Installer checksum/size mismatch');
-    const checksums=await readFile(unique(files,'installer-checksums.sha256'),'utf8');
+    const checksums=await readFile(record(files,'installer-checksums.sha256'),'utf8');
     if(!checksums.split(/\r?\n/).includes(`${item.sha256}  ${item.filename}`))throw Error('Installer checksum record mismatch');
-    const installed=await json(unique(files,'installed-bundle-evidence.json'));
+    const installed=await json(record(files,'installed-bundle-evidence.json'));
     if(installed.target!==platform.target||installed.installer.sha256!==item.sha256||!installed.checks.some(c=>c.startsWith('Installed agent passed'))||!installed.checks.some(c=>c.startsWith('Installed helpers passed'))||!installed.checks.some(c=>c.startsWith('Installed desktop remained running')))throw Error('Installed runtime evidence incomplete');
-    const audit=await json(unique(files,'native-dependencies.json'));
+    const audit=await json(record(files,'native-dependencies.json'));
     if(audit.target!==platform.target||audit.evidence.length!==8)throw Error('Native dependency evidence incomplete');
-    const review=await json(unique(files,'distribution-review.json'));
+    const review=await json(record(files,'distribution-review.json'));
     if(review.schemaVersion!==1||!review.rust.length||review.native.length!==10||!review.ffmpegFlags.includes('--disable-gpl')||!review.ffmpegFlags.includes('--disable-nonfree'))throw Error('Distribution material review incomplete');
-    const source=unique(files,'dependency-source.tar.gz'),sourceHash=hash(await readFile(source));
-    const sourceChecksum=(await readFile(unique(files,'dependency-source.sha256'),'utf8')).trim();
+    const source=record(files,'dependency-source.tar.gz'),sourceHash=hash(await readFile(source));
+    const sourceChecksum=(await readFile(record(files,'dependency-source.sha256'),'utf8')).trim();
     if(sourceChecksum!==`${sourceHash}  dependency-source.tar.gz`)throw Error('Dependency source checksum mismatch');
     const installerName=`Media-Compression_${version}_${platform.suffix}${platform.extension}`;
     pending.push({file:installer,name:installerName},
       {file:source,name:`media-compression_${version}_dependencies_${platform.target}.tar.gz`});
-    for(const name of ['THIRD_PARTY_NOTICES.txt','dependency-manifest.json','distribution-review.json','build-evidence.json','installed-bundle-evidence.json','native-dependencies.json'])pending.push({file:unique(files,name),name:`${platform.target}_${name}`});
-    if(platform.extension==='.exe')pending.push({file:unique(files,'webview2-provenance.json'),name:`${platform.target}_webview2-provenance.json`});
+    for(const name of ['THIRD_PARTY_NOTICES.txt','dependency-manifest.json','distribution-review.json','build-evidence.json','installed-bundle-evidence.json','native-dependencies.json'])pending.push({file:record(files,name),name:`${platform.target}_${name}`});
+    if(platform.extension==='.exe')pending.push({file:record(files,'webview2-provenance.json'),name:`${platform.target}_webview2-provenance.json`});
     platforms.push({...platform,installer:installerName,sha256:item.sha256,bytes:item.bytes,buildCommit:build.commit});
   }
   // Validate every input before staging anything. Never reuse/overwrite a release folder.

@@ -15,6 +15,9 @@ async function fixture(t){
   const inputDir=path.join(dir,'candidates');await mkdir(inputDir);
   for(const target of targets){
     const root=path.join(inputDir,`candidate-${target.target}`);await mkdir(root);
+    const records=path.join(root,'artifacts');await mkdir(records);
+    const bundle=path.join(root,'bundle');await mkdir(bundle);
+    await writeFile(path.join(bundle,'THIRD_PARTY_NOTICES.txt'),'bundled copy; use the authoritative artifact record');
     const installer=`Media Compression_${version}_${target.suffix}${target.extension}`,data=Buffer.from(target.target),source=Buffer.from(`source-${target.target}`);
     const item={filename:`${target.extension==='.exe'?'nsis':'dmg'}/${installer}`,bytes:data.length,sha256:sha(data)};
     const values={
@@ -24,16 +27,16 @@ async function fixture(t){
       'distribution-review.json':{schemaVersion:1,rust:[{}],native:Array(10).fill({}),ffmpegFlags:['--disable-gpl','--disable-nonfree']},
       'dependency-manifest.json':{},'webview2-provenance.json':{signatureStatus:'Unavailable'},
     };
-    for(const [file,value]of Object.entries(values))await writeFile(path.join(root,file),JSON.stringify(value));
-    await writeFile(path.join(root,installer),data);await writeFile(path.join(root,'dependency-source.tar.gz'),source);
-    await writeFile(path.join(root,'installer-checksums.sha256'),`${item.sha256}  ${item.filename}\n`);
-    await writeFile(path.join(root,'dependency-source.sha256'),`${sha(source)}  dependency-source.tar.gz\n`);
-    await writeFile(path.join(root,'THIRD_PARTY_NOTICES.txt'),'fixture license notice');
+    for(const [file,value]of Object.entries(values))await writeFile(path.join(records,file),JSON.stringify(value));
+    await writeFile(path.join(root,installer),data);await writeFile(path.join(records,'dependency-source.tar.gz'),source);
+    await writeFile(path.join(records,'installer-checksums.sha256'),`${item.sha256}  ${item.filename}\n`);
+    await writeFile(path.join(records,'dependency-source.sha256'),`${sha(source)}  dependency-source.tar.gz\n`);
+    await writeFile(path.join(records,'THIRD_PARTY_NOTICES.txt'),'fixture license notice');
   }
   const sourceFile=path.join(dir,'project-source.tar.gz');await writeFile(sourceFile,'test source');
   return {dir,inputDir,outputDir:path.join(dir,'release'),sourceFile,tag,commit,runUrl:'https://github.com/terzima/media-compression/actions/runs/1'};
 }
-async function change(input,target,file,fn){const p=path.join(input,`candidate-${target}`,file);const v=JSON.parse(await readFile(p,'utf8'));fn(v);await writeFile(p,JSON.stringify(v));}
+async function change(input,target,file,fn){const p=path.join(input,`candidate-${target}`,'artifacts',file);const v=JSON.parse(await readFile(p,'utf8'));fn(v);await writeFile(p,JSON.stringify(v));}
 test('stage all three targets and verify every renamed public asset against SHA256SUMS',async t=>{
   const f=await fixture(t),manifest=await prepareRelease(f);assert.equal(manifest.platforms.length,3);
   const sums=(await readFile(path.join(f.outputDir,'SHA256SUMS'),'utf8')).trim().split('\n');
@@ -43,7 +46,7 @@ test('stage all three targets and verify every renamed public asset against SHA2
 test('reject changed installer or dependency source before staging',async t=>{
   for(const source of [false,true]){
     const f=await fixture(t),p=targets[0];
-    await writeFile(path.join(f.inputDir,`candidate-${p.target}`,source?'dependency-source.tar.gz':`Media Compression_${version}_${p.suffix}${p.extension}`),'tampered');
+    await writeFile(path.join(f.inputDir,`candidate-${p.target}`,source?'artifacts/dependency-source.tar.gz':`Media Compression_${version}_${p.suffix}${p.extension}`),'tampered');
     await assert.rejects(prepareRelease(f),/checksum/);
     await assert.rejects(readFile(path.join(f.outputDir,'SHA256SUMS')),/ENOENT/);
   }
