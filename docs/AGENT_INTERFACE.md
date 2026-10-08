@@ -12,6 +12,8 @@ On macOS the installed executable is inside `Media Compression.app/Contents/MacO
 
 The `agent-plugin/skills/media-compression/SKILL.md` skill is also embedded in server instructions. It describes actual-study refinement, metric limitations, explicit export selection, source preservation and partial failures. This is a portable MCP/skill bundle, not an already-installed client plugin or marketplace publication. Client setup is the only connection step; ordinary users can keep using the GUI without it.
 
+The development guide also supports conversational intake: ask only for missing file/output access and the choice between exact preservation and visually similar lossy copies, translate the answer into tools, and complete authorized exports. The user's existing agent client supplies the model; subscription access alone does not give a client local tool support. See [plain-language requests and the GUI study walkthrough](USER_GUIDE.md). No universal SSIM threshold or automatic perceptual-quality target is introduced.
+
 Tools:
 
 | Tool | Purpose |

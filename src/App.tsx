@@ -4,7 +4,8 @@ import {listen} from '@tauri-apps/api/event';
 import {getCurrentWebview} from '@tauri-apps/api/webview';
 import {bytes,config,label,loadForm,savings,study} from './settings';
 import {version} from '../package.json';
-import type {Candidate,Form,Media,Playback,Snapshot} from './types';
+import StudyHelp from './StudyHelp';
+import type {Candidate,Form,Media,Playback,Settings,Snapshot} from './types';
 
 const desktop=isTauri();
 const empty:Snapshot={media:[],jobs:[],tools:[]};
@@ -16,6 +17,7 @@ export default function App(){
  const [audioLoading,setAudioLoading]=useState<string|null>(null);const audioRequest=useRef(0);
  const [sourcePreview,setSourcePreview]=useState<string|null>(null),[candidatePreview,setCandidatePreview]=useState<string|null>(null);
  const seen=useRef(new Set<string>()),seenCandidates=useRef(new Set<string>()),manualOutputs=useRef(new Set<string>()),list=useRef<HTMLDivElement>(null);
+ const losslessSelection=useRef(new Map<string,boolean>());
  const refresh=async()=>{try{setData(await invoke<Snapshot>('snapshot'));}catch(e){setError(String(e));}};
  const command=async<T,>(name:string,args?:Record<string,unknown>):Promise<T|undefined>=>{try{setError('');return await invoke<T>(name,args);}catch(e){setError(String(e));return undefined;}};
  useEffect(()=>{
@@ -40,11 +42,12 @@ export default function App(){
   return()=>{disposed=true;off?.();drop?.();clearTimeout(timer);clearInterval(poll);};
  },[]);
  useEffect(()=>{
+  if(!data.media.length)losslessSelection.current.clear();
   const newFiles=data.media.filter(m=>!seen.current.has(m.id));newFiles.forEach(m=>seen.current.add(m.id));
   if(newFiles.length)setInputs(old=>new Set([...old,...newFiles.filter(m=>!m.error).map(m=>m.id)]));
   if(!active&&data.media.length)setActive(data.media[0].id);
   const newCandidates=data.media.flatMap(m=>m.candidates).filter(c=>!seenCandidates.current.has(c.id));
-  if(newCandidates.length){newCandidates.forEach(c=>seenCandidates.current.add(c.id));setSelected(old=>{const next=new Set(old);for(const m of data.media){if(!newCandidates.some(c=>c.mediaId===m.id))continue;const smaller=m.candidates.filter(c=>c.bytes<m.bytes).sort((a,b)=>a.bytes-b.bytes);if(!manualOutputs.current.has(m.id)){for(const c of m.candidates)next.delete(c.id);if(smaller.length)next.add(smaller[0].id);}}return next;});}
+  if(newCandidates.length){newCandidates.forEach(c=>seenCandidates.current.add(c.id));setSelected(old=>{const next=new Set(old);for(const m of data.media){if(!newCandidates.some(c=>c.mediaId===m.id))continue;const losslessOnly=losslessSelection.current.get(m.id)??(m.properties?.kind==='image'&&form.imageMode==='lossless');const smaller=m.candidates.filter(c=>c.bytes<m.bytes&&(!losslessOnly||c.settings.some(s=>s.lossless)&&(m.properties?.kind==='image'?c.diagnostics.pixelIdentical===true:c.diagnostics.samplesIdentical===true))).sort((a,b)=>a.bytes-b.bytes);if(!manualOutputs.current.has(m.id)){for(const c of m.candidates)next.delete(c.id);if(smaller.length)next.add(smaller[0].id);}}return next;});}
  },[data]);
  const visible=data.media.filter(m=>!m.properties||m.properties.kind===tab);
  const media=data.media.find(m=>m.id===active)??visible[0];
@@ -65,7 +68,7 @@ export default function App(){
  const outputBytes=data.media.flatMap(m=>m.candidates).filter(c=>selected.has(c.id)).reduce((a,c)=>a+c.bytes,0);
  const update=(value:Partial<Form>)=>setForm({...form,...value});
  const add=async(folder:boolean)=>{setImporting(true);await command('add_files',{folder});await refresh();setImporting(false);};
- const start=async(explore:boolean)=>{try{const items=selectedMedia.map(m=>[m.id,explore?study(form,m):[config(form,m)]]);if(!items.length){setError('Select supported files first.');return;}const started=await command('start_jobs',{items});await refresh();if(started===undefined)return;setMessage(explore?'Study started. Each setting encodes from the original.':'Compression started. Originals stay unchanged.');}catch(e){setError(String(e));}};
+ const start=async(explore:boolean)=>{try{const items:[string,Settings[]][]=selectedMedia.map(m=>[m.id,explore?study(form,m):[config(form,m)]]);if(!items.length){setError('Select supported files first.');return;}const started=await command('start_jobs',{items});if(started!==undefined)for(const [id,settings] of items)losslessSelection.current.set(id,settings.every(s=>s.lossless));await refresh();if(started===undefined)return;setMessage(explore?'Study started. Each setting encodes from the original.':'Compression started. Originals stay unchanged.');}catch(e){setError(String(e));}};
  const check=(id:string)=>{const m=data.media.find(m=>m.candidates.some(c=>c.id===id));if(m)manualOutputs.current.add(m.id);setSelected(old=>{const next=new Set(old);next.has(id)?next.delete(id):next.add(id);return next;});};
  const checkInput=(id:string)=>setInputs(old=>{const next=new Set(old);next.has(id)?next.delete(id):next.add(id);return next;});
  const exportFiles=async()=>{setExporting(true);const paths=await command<string[]>('export_candidates',{ids:[...selected],report});if(paths?.length)setMessage(`Exported ${paths.length} file${paths.length===1?'':'s'}. Originals are unchanged.`);await refresh();setExporting(false);};
@@ -95,7 +98,8 @@ export default function App(){
     {tab==='image'&&imageFormat==='jpeg'&&<div className="flatten"><label className="check"><input type="checkbox" checked={form.flatten} onChange={e=>update({flatten:e.target.checked})}/> Flatten transparency onto a background</label>{form.flatten&&<input aria-label="JPEG background" type="color" value={form.background} onChange={e=>update({background:e.target.value})}/>}</div>}
     {tab==='audio'&&<p className="hint">{form.audioFormat==='opus'?'Opus uses 48 kHz processing. ':''}{selectedMedia.some(m=>!([...(form.audioFormat==='aac'?[7350,8000,11025,12000,16000,22050,24000,32000,44100,48000,64000,88200,96000]:form.audioFormat==='mp3'?[8000,11025,12000,16000,22050,24000,32000,44100,48000]:form.audioFormat==='opus'?[48000]:[m.properties?.sampleRate])].includes(m.properties?.sampleRate)))?'Unsupported source sample rates will convert to 48 kHz. ':''}Channel count stays unchanged.</p>}
     <p className="hint">{selectedMedia.length} files · {(()=>{try{return selectedMedia.reduce((n,m)=>n+study(form,m).length,0);}catch{return 'Invalid';}})()} study encodes · at most two jobs at once. You can cancel and retain completed candidates.</p>
-    <div className="run-buttons"><button className="primary" disabled={!desktop||busy||importing||!selectedMedia.length} onClick={()=>void start(false)}>Compress selected <span>→</span></button><button className="study" disabled={!desktop||busy||importing||!selectedMedia.length} onClick={()=>void start(true)}>◌ Quick study <span>{form.mode==='quick'?'Compare preset levels':'Test your custom levels'}</span></button></div>
+    <div className="run-buttons"><button className="primary" disabled={!desktop||busy||importing||!selectedMedia.length} onClick={()=>void start(false)}>Compress selected <span>→</span></button><button className="study" disabled={!desktop||busy||importing||!selectedMedia.length} onClick={()=>void start(true)}>◌ Quick study <span>{isLossless&&(form.mode==='advanced'||form.imageMode==='lossless'&&tab==='image'||tab==='audio')?'Verify one lossless setting':form.mode==='quick'?'Compare preset levels':'Test your custom levels'}</span></button></div>
+    <StudyHelp audio={tab==='audio'}/>
     {busy&&<button className="cancel" onClick={()=>void command('cancel_jobs',{id:null})}>Cancel processing ({jobs.length} files)</button>}
    </div></section>
   <section className="review panel"><div className="panel-heading"><div><span className="eyebrow">COMPARE BEFORE YOU EXPORT</span><h2>{media?.name??'Find your balance'}</h2></div>{media?.properties&&<span className="media-meta">{media.properties.kind==='image'?`${media.properties.width} × ${media.properties.height}`:`${media.properties.channels===1?'Mono':'Stereo'} · ${media.properties.sampleRate} Hz`} · {media.bytes.toLocaleString()} bytes</span>}</div>

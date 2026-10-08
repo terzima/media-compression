@@ -2,4 +2,6 @@
 
 .settings-detail{margin-right:10px;font-size:10px;color:#92a58c}.settings-detail pre{position:absolute;right:10px;top:35px;max-height:180px;overflow:auto;background:#111820;border:1px solid #4a5744;border-radius:6px;padding:12px;z-index:3;font-size:10px;text-align:left}.settings-detail summary{cursor:pointer}
 
+.study-help{margin-top:14px;font-size:11px;line-height:1.65;color:#9eafc3}.study-help summary{cursor:pointer;color:#c7dfbb;padding:5px 0}.study-help summary:focus-visible{outline:2px solid #b9e49e;outline-offset:3px;border-radius:3px}.study-help p{margin-top:10px}.study-help strong{color:#d3decd;font-weight:500}
+
 .agent-overlay{position:fixed;inset:0;z-index:40;background:#07100edb;display:grid;place-items:center;padding:30px}.agent-dialog{width:min(760px,100%);max-height:85vh;overflow:auto;padding:24px;box-shadow:0 24px 90px #0007}.agent-dialog .panel-heading{padding:0 0 16px}.agent-dialog p{line-height:1.6;color:var(--muted)}.agent-dialog .field{margin-top:20px}.agent-dialog textarea{width:100%;resize:vertical;padding:12px;background:#0c1513;color:#e3efe9;border:1px solid #33423c;border-radius:8px;font:12px/1.5 monospace}.agent-dialog input{font-size:12px}

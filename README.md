@@ -55,7 +55,7 @@ You do not need to know shell commands or have the app downloaded first. Downloa
 
 **Preview distribution:** public alpha release assets can be downloaded without GitHub sign-in. They are unsigned test candidates, with signing and clean minimum-OS qualification still deferred. The request explicitly accepts these for testing; replace that paragraph with a stable-only requirement if you prefer to wait for qualification. It must never claim setup succeeded when no suitable installer could be obtained.
 
-Once setup is complete, try: **“Study this file and show me the smallest candidates with good quality, explain the tradeoffs, and let me compare them before export.”** The agent measures real outputs and refines settings; lossy quality still depends on your requirements and visual/listening feedback.
+Once setup is complete, try: **“Help me make this image smaller. Ask only what you need, then run it and give me the copy.”** Provide the image and an output folder. The agent should clarify whether you want exactly unchanged pixels or allow visually similar lossy copies, then perform the authorized work. You do not need to pick codecs or learn commands. Your existing agent supplies the conversation; the app supplies local tools, with no built-in AI model or separate subscription. Read [copyable requests, measured-study results and the GUI walkthrough](docs/USER_GUIDE.md). This conversational instruction update and inline GUI help require a development build after alpha.1; the installed alpha can still run studies with an explicit request.
 
 ### Setup instructions for agents
 
